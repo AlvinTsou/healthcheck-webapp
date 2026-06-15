@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>健檢報告智慧分析與健康管理顧問</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Marked.js for Markdown Rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+</head>
+<body>
+    <div class="background-decor">
+        <div class="glow-circle circle-1"></div>
+        <div class="glow-circle circle-2"></div>
+        <div class="glow-circle circle-3"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 12 2 12 2ZM17 13H13V17H11V13H7V11H11V7H13V11H17V13Z" fill="url(#logo-grad)"/>
+                    <defs>
+                        <linearGradient id="logo-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#00f2fe"/>
+                            <stop offset="1" stop-color="#4facfe"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <h1>HealthCheck<span>Agent</span></h1>
+            </div>
+            <p class="subtitle">基於 Vertex AI Search Grounding 的防幻覺健檢專家系統</p>
+        </header>
+
+        <!-- Main Body -->
+        <main class="main-content">
+            <!-- Left Panel: Actions -->
+            <section class="panel upload-panel">
+                <div class="panel-header">
+                    <h2>報告上傳與諮詢</h2>
+                    <p>請上傳您的健檢報告圖片/PDF，並輸入您最想諮詢的問題</p>
+                </div>
+                
+                <form id="analyze-form" class="analyze-form">
+                    <!-- Drop Zone -->
+                    <div id="drop-zone" class="drop-zone">
+                        <input type="file" id="file-input" name="file" accept="image/*,application/pdf" class="file-input">
+                        <div class="drop-zone-content">
+                            <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4C9.11 4 6.6 5.64 5.35 8.04C2.34 8.36 0 10.91 0 14C0 17.31 2.69 20 6 20H19C21.76 20 24 17.76 24 15C24 12.36 21.95 10.22 19.35 10.04ZM19 18H6C3.79 18 2 16.21 2 14C2 11.95 3.53 10.24 5.56 10.03L6.63 9.92L7.13 8.97C8.08 7.14 9.94 6 12 6C14.89 6 17.39 8.01 17.85 10.85L18.12 12.5L19.78 12.61C21.03 12.69 22 13.73 22 15C22 16.65 20.65 18 19 18ZM13 9H11V13H8L12 17L16 13H13V9Z" fill="currentColor"/>
+                            </svg>
+                            <p class="main-prompt">拖曳健檢報告圖片或 PDF 至此處</p>
+                            <p class="sub-prompt">或點擊此區域瀏覽檔案</p>
+                            <p class="supported-files">支援 PNG, JPG, JPEG, PDF</p>
+                        </div>
+                        <div id="preview-container" class="preview-container hidden">
+                            <!-- Preview item dynamically created -->
+                        </div>
+                    </div>
+
+                    <!-- Question Input -->
+                    <div class="form-group">
+                        <label for="question-input">您的諮詢問題</label>
+                        <textarea id="question-input" placeholder="例如：我的總膽固醇 240，這很嚴重嗎？需要注意什麼？" required></textarea>
+                    </div>
+
+                    <button type="submit" id="submit-btn" class="submit-btn" disabled>
+                        <span>開始智慧分析</span>
+                        <svg class="arrow-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Right Panel: Results -->
+            <section class="panel result-panel">
+                <div class="panel-header">
+                    <h2>分析結果</h2>
+                    <span class="status-badge idle" id="status-badge">等待輸入</span>
+                </div>
+                
+                <div class="result-content">
+                    <!-- Idle View -->
+                    <div id="result-idle" class="result-idle-view">
+                        <div class="icon-bubble">
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V15H13V17ZM13 13H11V7H13V13Z" fill="currentColor"/>
+                            </svg>
+                        </div>
+                        <h3>準備就緒</h3>
+                        <p>請上傳報告並輸入問題，AI 健檢顧問將即刻為您解讀</p>
+                    </div>
+
+                    <!-- Loading / Skeleton Loader -->
+                    <div id="result-loading" class="result-loading-view hidden">
+                        <div class="skeleton-line skeleton-title"></div>
+                        <div class="skeleton-line skeleton-p1"></div>
+                        <div class="skeleton-line skeleton-p2"></div>
+                        <div class="skeleton-line skeleton-p3"></div>
+                        <div class="skeleton-line skeleton-p2"></div>
+                        <div class="skeleton-line skeleton-p1"></div>
+                    </div>
+
+                    <!-- Success View / Report -->
+                    <div id="result-success" class="result-success-view hidden">
+                        <!-- Markdown Output Rendered Here -->
+                        <article id="report-body" class="markdown-body"></article>
+
+                        <!-- Grounding Citations -->
+                        <div class="citations-container" id="citations-area">
+                            <h4>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 6px;">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13 17H11V11H13V17ZM13 9H11V7H13V9Z" fill="currentColor"/>
+                                </svg>專業醫學依據來源
+                            </h4>
+                            <div class="citations-list" id="citations-list">
+                                <!-- Citation Badges -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
