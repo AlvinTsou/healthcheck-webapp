@@ -11,7 +11,7 @@
 3. 點擊 **建立 (Create)** 建立一個新的 Bucket（例如命名為：`healthcheck-handbook-xxx`，需全域唯一）。
 4. 儲存類別與區域建議選擇與您後續服務相同的區域（例如 `asia-east1` 台灣，或預設的 `us-central1`）。
 5. 建立完成後，進入該 Bucket。
-6. 將本專案目錄下 [resource/健檢報告完全手冊_修訂版__skOlEQAAQBAJ](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/resource/%E5%81%A5%E6%AA%A2%E5%A0%B1%E5%91%8A%E5%AE%8C%E5%85%A8%E6%89%8B%E5%86%8A_%E4%BF%AE%E8%A8%82%E7%89%88__skOlEQAAQBAJ) 資料夾內的所有 `page_xxxx.png` 檔案（共 30 張圖片）上傳至 Bucket 根目錄中。
+6. 將本專案目錄下 [resource/健檢報告完全手冊_修訂版__skOlEQAAQBAJ](resource/健檢報告完全手冊_修訂版__skOlEQAAQBAJ) 資料夾內的所有 `page_xxxx.png` 檔案（共 30 張圖片）上傳至 Bucket 根目錄中。
 
 ---
 

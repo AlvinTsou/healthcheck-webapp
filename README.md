@@ -6,7 +6,7 @@
 
 ## 🛠️ 環境配置
 
-本專案需要連接您在 GCP 上建立的 Vertex AI Search Data Store。請先閱讀 [GCP_GUIDE.md](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/GCP_GUIDE.md) 完成資源建構，並在本地終端機執行：
+本專案需要連接您在 GCP 上建立的 Vertex AI Search Data Store。請先閱讀 [GCP_GUIDE.md](GCP_GUIDE.md) 完成資源建構，並在本地終端機執行：
 ```bash
 gcloud auth application-default login
 ```

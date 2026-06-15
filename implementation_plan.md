@@ -14,7 +14,7 @@
 
 ## Proposed Changes
 
-本專案將於 [HealthCheck WebApp](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp) 目錄下建立，結構如下：
+本專案將於 [HealthCheck WebApp](./) 目錄下建立，結構如下：
 
 ```
 HealthCheck WebApp/
@@ -36,7 +36,7 @@ HealthCheck WebApp/
 
 ### 1. 後端與配置元件
 
-#### [NEW] [.env.example](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/.env.example)
+#### [NEW] [.env.example](.env.example)
 *   提供專案所需的環境變數範本：
     ```env
     GCP_PROJECT_ID=your-gcp-project-id
@@ -45,7 +45,7 @@ HealthCheck WebApp/
     GEMINI_MODEL=gemini-1.5-pro
     ```
 
-#### [NEW] [requirements.txt](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/requirements.txt)
+#### [NEW] [requirements.txt](requirements.txt)
 *   列出所需的 Python 依賴套件：
     *   `fastapi`
     *   `uvicorn`
@@ -53,7 +53,7 @@ HealthCheck WebApp/
     *   `python-multipart`
     *   `python-dotenv`
 
-#### [NEW] [main.py](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/main.py)
+#### [NEW] [main.py](main.py)
 *   讀取 `.env` 檔案中的設定。
 *   提供 API 路由：
     *   `POST /api/analyze`：
@@ -62,14 +62,14 @@ HealthCheck WebApp/
         *   呼叫 `gemini-1.5-pro` 進行 Grounded Generation，讓 Gemini 讀懂上傳報告的同時，翻閱 Vertex AI Search 裡的健檢手冊。
         *   解析 `response.candidates[0].grounding_metadata`，提取引用文檔片段 (Citations)，一併回傳給前端。
 
-#### [NEW] [GCP_GUIDE.md](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/GCP_GUIDE.md)
+#### [NEW] [GCP_GUIDE.md](GCP_GUIDE.md)
 *   以中文詳細說明：
     1.  如何在 GCP 控制台建立 Cloud Storage Bucket，並上傳手冊圖片。
     2.  如何建立 Vertex AI Search Data Store，並將其連接至該 Bucket，啟動自動 OCR。
     3.  如何取得 `GCP_PROJECT_ID` 與 `GCP_DATASTORE_ID` 並填入 `.env`。
     4.  如何使用 `gcloud auth application-default login` 授權本地開發環境。
 
-#### [NEW] [README.md](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/README.md)
+#### [NEW] [README.md](README.md)
 *   撰寫完整的專案說明。
 *   針對 **macOS** 提供兩種運行指引：
     *   **方法一：使用 Python 虛擬環境 (macOS 終端機)**
@@ -85,19 +85,19 @@ HealthCheck WebApp/
 
 ### 2. 前端介面設計 (Glassmorphism 玻璃擬態)
 
-#### [NEW] [index.html](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/static/index.html)
+#### [NEW] [index.html](static/index.html)
 *   使用 Google Fonts (Outfit 與 Noto Sans TC) 提供優雅的字體排版。
 *   引入 `marked.js` 用於 Markdown 渲染。
 *   雙欄響應式佈局：
     *   **左欄：上傳與控制區**：拖曳上傳區域、預覽卡片、提問輸入框。
     *   **右欄：分析結果區**：包含 AI 骨架載入動畫 (Skeleton Loader) 的卡片。
 
-#### [NEW] [style.css](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/static/style.css)
+#### [NEW] [style.css](static/style.css)
 *   深色漸層背景 + `backdrop-filter: blur(16px)` 與微弱發光邊框，打造現代感的高級毛玻璃效果。
 *   平滑的 hover 漸層與微動畫。
 *   設計精美的骨架屏載入動畫。
 
-#### [NEW] [app.js](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/static/app.js)
+#### [NEW] [app.js](static/app.js)
 *   處理拖曳上傳與即時圖片預覽。
 *   發送 Multipart 請求給 FastAPI 後端。
 *   接收後端回傳的分析結果與 **Citations (引用來源)**，使用 `marked.parse` 渲染回答，並將引用來源以高質感的標籤卡片形式單獨展示。
@@ -106,7 +106,7 @@ HealthCheck WebApp/
 
 ### 3. 容器化與部署
 
-#### [NEW] [Dockerfile](file:///C:/Users/alvin/MyProjects/HealthCheck%20WebApp/Dockerfile)
+#### [NEW] [Dockerfile](Dockerfile)
 *   打包 Python FastAPI 服務，暴露特定連接埠以相容於 GCP Cloud Run 部署。
 
 ## Verification Plan
