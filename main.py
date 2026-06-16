@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from google.core.exceptions import GoogleAPIError
+from google.genai.errors import APIError
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -173,7 +173,7 @@ async def analyze_health_report(
             "citations": unique_citations
         })
         
-    except GoogleAPIError as g_err:
+    except APIError as g_err:
         logger.error(f"Google API Error: {str(g_err)}")
         return JSONResponse(
             status_code=502,
