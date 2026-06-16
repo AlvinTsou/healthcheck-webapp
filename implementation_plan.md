@@ -106,8 +106,29 @@ HealthCheck WebApp/
 
 ### 3. 容器化與部署
 
-#### [NEW] [Dockerfile](Dockerfile)
+#### [NEW] [Dockerfile](file:///Users/alvintsou/Documents/Projects/healthcheck-webapp/Dockerfile)
 *   打包 Python FastAPI 服務，暴露特定連接埠以相容於 GCP Cloud Run 部署。
+
+#### [NEW] [docker-compose.yml](file:///Users/alvintsou/Documents/Projects/healthcheck-webapp/docker-compose.yml)
+*   提供本機及 VPS 多容器環境的啟動配置，將金鑰掛載進容器，並限制系統資源。
+
+#### 最佳部署方案 (VPS 與 Zeabur 混合架構)
+由於伺服器的主機 Port 80 與 443 已被既存的 `pokerroom-nginx` 與 `n8n-caddy` 佔用，為避免衝突並讓 Zeabur 與其他服務和平共處，部署策略如下：
+
+1.  **修正 Zeabur (K3s) Ingress Controller 狀態** (已完成)：
+    *   將 Zeabur 內部的 `ingress-controller` DaemonSet 調整為 `hostNetwork: false`，避免其與主機的 80/443 Port 產生衝突。
+    *   新增一個 `NodePort` 服務 (`ingress-controller-nodeport`)，將 K3s 內部的 Ingress 暴露在主機的 Port `30080` (HTTP) 與 `30443` (HTTPS)。
+2.  **服務部署**：
+    *   **方式一：透過 Zeabur CLI 遠端部署**：
+        1. 本地使用 API Key 登入：`npx zeabur auth login --token <TOKEN>`。
+        2. 專案根目錄下執行：`npx zeabur deploy`。
+        3. 在 Zeabur 網頁控制台設定環境變數與 Config 掛載金鑰。
+        4. 外部流量路由：在伺服器的 `n8n-caddy` 或 `pokerroom-nginx` 中，將該服務網域的請求反向代理（`reverse_proxy`）至 `http://localhost:30080`。
+    *   **方式二：使用 Docker Compose 直接在 VPS 部署**：
+        1. 透過 Git 將專案拉取至伺服器。
+        2. 將 `gcp-key.json` 上傳至伺服器專案目錄下。
+        3. 執行 `sudo docker compose up -d --build`，服務將運行在 Port `8000`。
+        4. 外部流量路由：在伺服器的 Caddy 或 Nginx 設定中，將網域請求反向代理至 `http://localhost:8000`。
 
 ## Verification Plan
 
@@ -118,5 +139,8 @@ HealthCheck WebApp/
 2.  **本地啟動測試**：
     *   執行 `uvicorn main:app --reload --port 8000`。
     *   在瀏覽器打開 `http://localhost:8000`。
-3.  **端到端功能測試**：
+3.  **Zeabur (K3s) 狀態確認**：
+    *   在伺服器上執行 `sudo kubectl get pods -n default -l app.kubernetes.io/name=ingress-controller`，確認狀態為 `Running` (1/1)。
+4.  **端到端功能測試**：
     *   上傳測試用的健檢報告圖片，輸入問題並送出，確認 AI 回答是否正確參考了您上傳手冊的數據，且帶有 Citation。
+

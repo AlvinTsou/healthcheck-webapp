@@ -16,6 +16,18 @@ logger = logging.getLogger("healthcheck-backend")
 # Load environment variables
 load_dotenv()
 
+# Support dynamic GCP Key from env var (useful for serverless/Zeabur deployments)
+gcp_key_json = os.getenv("GCP_KEY_JSON")
+if gcp_key_json:
+    key_path = "/tmp/gcp-key.json"
+    try:
+        with open(key_path, "w", encoding="utf-8") as f:
+            f.write(gcp_key_json)
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key_path
+        logger.info(f"Dynamically wrote GCP key to {key_path} and set GOOGLE_APPLICATION_CREDENTIALS")
+    except Exception as e:
+        logger.error(f"Failed to write dynamic GCP key: {str(e)}")
+
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 GCP_LOCATION = os.getenv("GCP_LOCATION", "global")
 GCP_DATASTORE_ID = os.getenv("GCP_DATASTORE_ID")
