@@ -147,10 +147,10 @@ async def analyze_health_report(
             if metadata.grounding_chunks:
                 for chunk in metadata.grounding_chunks:
                     # Capture source title or page
-                    if chunk.web_source:
+                    if chunk.web:
                         citations.append({
-                            "title": chunk.web_source.title,
-                            "uri": chunk.web_source.uri
+                            "title": chunk.web.title,
+                            "uri": chunk.web.uri
                         })
                     elif chunk.retrieved_context:
                         uri = chunk.retrieved_context.uri
