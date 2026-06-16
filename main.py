@@ -113,9 +113,16 @@ async def analyze_health_report(
             "4. 如果相關標準或答案在知識庫中完全找不到，請禮貌地告知使用者，並引導使用者諮詢醫生，不要盲目猜測或虛構數據。"
         )
         
+        # Define Grounding Tool
+        grounding_tool = types.Tool(
+            retrieval=types.Retrieval(
+                vertex_ai_search=types.VertexAISearch(datastore=datastore_path)
+            )
+        )
+        
         # Setup Grounding config
         grounding_config = types.GenerateContentConfig(
-            vertex_ai_search_datastore=datastore_path,
+            tools=[grounding_tool],
             system_instruction=system_instruction,
             temperature=0.2 # low temperature for strict factual outputs
         )
