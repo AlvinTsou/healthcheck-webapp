@@ -21,6 +21,14 @@ gcp_key_json = os.getenv("GCP_KEY_JSON")
 if gcp_key_json:
     key_path = "/tmp/gcp-key.json"
     try:
+        # Check if it looks like base64 (doesn't start with '{')
+        stripped_key = gcp_key_json.strip()
+        if not stripped_key.startswith("{"):
+            import base64
+            logger.info("Detecting Base64-encoded GCP_KEY_JSON, decoding...")
+            decoded_bytes = base64.b64decode(stripped_key)
+            gcp_key_json = decoded_bytes.decode("utf-8")
+            
         with open(key_path, "w", encoding="utf-8") as f:
             f.write(gcp_key_json)
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key_path
