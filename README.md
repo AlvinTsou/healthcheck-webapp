@@ -107,3 +107,26 @@ macOS 系統已內建 Python 3，請打開「終端機 (Terminal)」並執行以
         git branch -M main
         git push -u origin main
         ```
+
+---
+
+## 🧪 快速功能測試 (Quick Testing)
+
+本專案內建模擬數據生成腳本，即使您手邊暫時沒有真實的健檢報告，也能輕鬆測試系統的 RAG 健檢分析功能：
+
+1. **生成模擬測試圖片**（需先啟用虛擬環境並安裝套件）：
+   ```bash
+   python3 generate_test_report.py
+   ```
+   這會在 `static/test_report.png` 產生一張包含多項血壓、血糖、膽固醇等紅字異常數據的測試報告圖。
+2. **下載測試圖片**：
+   * 本地伺服器啟動後，直接在瀏覽器下載 `http://localhost:8000/test_report.png`。
+3. **上傳並發送測試**：
+   * 進入網頁主畫面 `http://localhost:8000`。
+   * 將該圖片上傳，並輸入提問（例如：「我的總膽固醇 245 還有空腹血糖 115 該注意什麼？」）即可測試 RAG 與 Gemini 串接結果。
+
+---
+
+## 🛠️ 開發與後續維護 (Development & Maintenance)
+
+關於本系統的架構細節、日常開發指令、更新雲端手冊知識庫以及更換 Gemini 模型版本等，請參閱詳細的 [DEV_MAINTENANCE.md](DEV_MAINTENANCE.md)。
