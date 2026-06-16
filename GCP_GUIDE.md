@@ -17,9 +17,9 @@
 
 ## 第二步：建立 Vertex AI Search Data Store
 
-1. 在 GCP 控制台搜尋並進入 **Vertex AI Search & Conversation** (舊稱 GenAI App Builder)。
+1. 在 GCP 控制台搜尋並進入 **AI Applications** (舊稱 Vertex AI Search & Conversation 或 GenAI App Builder)。
 2. 若是首次使用，請依提示啟用相關 API。
-3. 在左側選單點擊 **Data Stores (資料儲存庫)**，然後點擊 **Create Data Store (建立資料儲存庫)**。
+3. 在左側選單點擊 **資料儲存庫 (Data Stores)**，然後點擊 **建立資料儲存庫 (Create Data Store)**。
 4. 選擇 **Cloud Storage** 作為資料來源。
 5. 在設定中：
    * **路徑**：選擇您剛剛建立的 Bucket 路徑（例如：`gs://healthcheck-handbook-xxx/`）。
@@ -30,13 +30,19 @@
 
 ---
 
-## 第三步：建立 Chat App (Agent)
+## 第三步：建立自訂搜尋應用程式（選用）
 
-1. 在 Vertex AI Search & Conversation 控制台左側選單，點擊 **Apps (應用程式)**。
-2. 點擊 **Create App (建立應用程式)**，並選擇 **Search** 或 **Chat** 類型。
-3. 輸入應用程式名稱（例如 `healthcheck-agent`），並將公司名稱填入。
-4. 在下一個步驟中，勾選您剛剛建立的 `healthcheck-handbook-ds` Data Store 並將其綁定。
-5. 完成建立。
+雖然本 WebApp 主要是透過 API 直接與 Data Store 進行對接，但若您想在控制台內預覽檢索與對話效果，可以建立一個搜尋應用程式：
+
+1. 在左側選單點擊 **應用程式 (Apps)**，然後點擊 **建立應用程式 (Create Application)**。
+2. 在第一個步驟「類型 (Type)」：
+   * 選擇 **搜尋與助理 (Search & Assistant)** 頁籤。
+   * 找到 **自訂搜尋（一般）(Custom Search - Generic)** 項目，點選下方 **建立 (Create)**。
+3. 在第二個步驟「設定 (Settings)」：
+   * 輸入應用程式名稱（例如 `healthcheck-search-app`），並填入公司/機構名稱。
+4. 在第三個步驟「資料 (Data)」：
+   * 勾選您在第二步建立的 `healthcheck-handbook-ds` 資料儲存庫並將其綁定。
+5. 點擊 **建立 (Create)** 完成應用程式建立。
 
 ---
 
