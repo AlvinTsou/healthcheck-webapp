@@ -14,3 +14,9 @@ cloudflare.key
 *.crt
 *.pem
 
+# Data and Logs
+quota_store.json
+usage_log.jsonl
+*.jsonl
+
+

@@ -659,6 +659,99 @@ body {
     box-shadow: 0 0 10px rgba(79, 172, 254, 0.15);
 }
 
+/* Action Bar for Copy & Export */
+.result-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 16px;
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 8px 16px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.action-btn:hover {
+    background: rgba(0, 242, 254, 0.08);
+    border-color: rgba(0, 242, 254, 0.3);
+    color: #00f2fe;
+    box-shadow: 0 0 12px rgba(0, 242, 254, 0.1);
+    transform: translateY(-1px);
+}
+
+.action-btn svg {
+    transition: transform 0.3s ease;
+}
+
+.action-btn:hover svg {
+    transform: scale(1.1);
+}
+
+.action-btn.copied {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #10b981;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+}
+
+/* Swipe Hint */
+.swipe-hint {
+    display: none;
+    text-align: center;
+    margin-top: -8px;
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 400;
+    opacity: 0.8;
+    animation: swipe-pulse 2s infinite ease-in-out;
+}
+
+@keyframes swipe-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+/* Result Card */
+.result-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    transition: border-color 0.3s ease, transform 0.3s ease;
+}
+
+.result-card:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.result-card h2 {
+    margin-top: 0 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+    font-size: 1.25rem;
+    color: #00f2fe;
+    background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
 /* --- Mobile Portrait Layout Optimization (max-width: 576px) --- */
 @media (max-width: 576px) {
     /* 1. Page Margin & Padding */
@@ -741,8 +834,147 @@ body {
         gap: 20px;
     }
     
+    /* 手機版卡片滑動配置 */
+    .swipe-hint {
+        display: block !important;
+    }
+    
+    .markdown-body {
+        display: flex !important;
+        overflow-x: auto !important;
+        scroll-snap-type: x mandatory !important;
+        gap: 16px !important;
+        padding: 4px 4px 16px 4px !important;
+        -webkit-overflow-scrolling: touch !important;
+        width: 100% !important;
+    }
+    
+    .markdown-body::-webkit-scrollbar {
+        height: 6px;
+    }
+    .markdown-body::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 4px;
+    }
+    .markdown-body::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+    }
+    .markdown-body::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 242, 254, 0.3);
+    }
+    
+    .result-card {
+        flex: 0 0 88% !important;
+        scroll-snap-align: start !important;
+        margin-bottom: 0 !important;
+        min-height: 280px;
+        display: flex;
+        flex-direction: column;
+    }
+    
     /* Disable floating background animation on mobile to boost scroll FPS */
     .glow-circle {
         animation: none !important;
+    }
+}
+
+/* --- Print Mode Styles for PDF Export --- */
+@media print {
+    /* 1. 隱藏不必要的介面元素 */
+    body {
+        background: #ffffff !important;
+        color: #000000 !important;
+    }
+    
+    .background-decor,
+    .app-header,
+    .upload-panel,
+    .result-actions,
+    .status-badge,
+    .citations-container,
+    .swipe-hint {
+        display: none !important;
+    }
+    
+    /* 2. 移除所有毛玻璃與深色裝飾，改為標準白底黑字 */
+    .app-container {
+        padding: 0 !important;
+        max-width: 100% !important;
+    }
+    
+    .panel.result-panel {
+        background: none !important;
+        border: none !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+    }
+    
+    .panel-header {
+        margin-bottom: 20px !important;
+        border-bottom: 2px solid #000000 !important;
+        padding-bottom: 10px !important;
+    }
+    
+    .panel-header h2 {
+        color: #000000 !important;
+        font-size: 2rem !important;
+    }
+    
+    .result-card {
+        background: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin-bottom: 30px !important;
+        page-break-inside: avoid; /* 防止在卡片中途分頁 */
+    }
+    
+    .result-card h2 {
+        color: #000000 !important;
+        border-bottom: 1.5px solid #000000 !important;
+        -webkit-text-fill-color: initial !important;
+        background: none !important;
+        padding-bottom: 6px !important;
+        margin-bottom: 12px !important;
+        font-size: 1.3rem !important;
+    }
+    
+    .markdown-body {
+        color: #000000 !important;
+        display: block !important; /* 強制重設成 block 排版以利直式列印 */
+    }
+    
+    .markdown-body p, 
+    .markdown-body li {
+        color: #333333 !important;
+    }
+    
+    .markdown-body table {
+        margin-bottom: 20px !important;
+        display: table !important; /* 確保列印時表格以 table 模式渲染 */
+        width: 100% !important;
+    }
+    
+    .markdown-body th {
+        background: #f3f4f6 !important;
+        color: #000000 !important;
+        border: 1px solid #d1d5db !important;
+    }
+    
+    .markdown-body td {
+        border: 1px solid #d1d5db !important;
+        color: #000000 !important;
+    }
+    
+    .markdown-body blockquote {
+        background: #f9fafb !important;
+        border-left: 4px solid #9ca3af !important;
+        border-top: 1px solid #e5e7eb !important;
+        border-right: 1px solid #e5e7eb !important;
+        border-bottom: 1px solid #e5e7eb !important;
+        color: #555555 !important;
+        padding: 12px !important;
     }
 }

@@ -10,6 +10,7 @@ services:
     volumes:
       - ./gcp-key.json:/app/gcp-key.json
       - ./quota_store.json:/app/quota_store.json
+      - ./usage_log.jsonl:/app/usage_log.jsonl
     restart: always
 
   nginx:

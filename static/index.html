@@ -118,7 +118,28 @@
 
                     <!-- Success View / Report -->
                     <div id="result-success" class="result-success-view hidden">
-                        <!-- Markdown Output Rendered Here -->
+                        <!-- Action Bar for Copy/Export -->
+                        <div class="result-actions">
+                            <button type="button" id="copy-report-btn" class="action-btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1H20V5H22V3C22 1.9 21.1 1 20 1H16ZM19 7H8C6.9 7 6 7.9 6 9V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V9C21 7.9 20.1 7 19 7ZM19 21H8V9H19V21Z" fill="currentColor"/>
+                                </svg>
+                                <span>複製建議</span>
+                            </button>
+                            <button type="button" id="print-pdf-btn" class="action-btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M19 8H5C3.34 8 2 9.34 2 11V17H6V21H18V17H22V11C22 9.34 20.66 8 19 8ZM16 19H8V15H16V19ZM19 12C18.45 12 18 11.55 18 11C18 10.45 18.45 10 19 10C19.55 10 20 10.45 20 11C20 11.55 19.55 12 19 12ZM18 3H6V7H18V3Z" fill="currentColor"/>
+                                </svg>
+                                <span>匯出 PDF</span>
+                            </button>
+                        </div>
+
+                        <!-- Swipe Hint for Mobile -->
+                        <div class="swipe-hint">
+                            <span class="swipe-hint-text">← 左右滑動查看完整分析 →</span>
+                        </div>
+
+                        <!-- Markdown Output Rendered Here (will host result cards) -->
                         <article id="report-body" class="markdown-body"></article>
 
                         <!-- Grounding Citations -->

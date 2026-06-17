@@ -19,7 +19,38 @@ document.addEventListener('DOMContentLoaded', () => {
     const citationsArea = document.getElementById('citations-area');
     const citationsList = document.getElementById('citations-list');
     
+    // Action Bar Buttons
+    const copyReportBtn = document.getElementById('copy-report-btn');
+    const printPdfBtn = document.getElementById('print-pdf-btn');
+    
     let selectedFile = null;
+    let currentAnalysisText = '';
+
+    // --- Action Bar Listeners ---
+    copyReportBtn.addEventListener('click', async () => {
+        if (!currentAnalysisText) return;
+        try {
+            await navigator.clipboard.writeText(currentAnalysisText);
+            const originalText = copyReportBtn.innerHTML;
+            copyReportBtn.innerHTML = `
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="currentColor"/>
+                </svg>
+                <span>已複製！</span>
+            `;
+            copyReportBtn.classList.add('copied');
+            setTimeout(() => {
+                copyReportBtn.innerHTML = originalText;
+                copyReportBtn.classList.remove('copied');
+            }, 1500);
+        } catch (err) {
+            alert('複製失敗，請手動選取複製。');
+        }
+    });
+
+    printPdfBtn.addEventListener('click', () => {
+        window.print();
+    });
 
     // --- Drag and Drop Listeners ---
     ['dragenter', 'dragover'].forEach(eventName => {
@@ -196,14 +227,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 quotaBadge.style.display = 'none';
             }
 
-            // Render Markdown
-            // Config marked to open links in new tab
+            // Save analysis text for copy function
+            currentAnalysisText = data.analysis;
+
+            // Render Markdown Cards
             const renderer = new marked.Renderer();
             renderer.link = (href, title, text) => {
                 return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
             };
             marked.setOptions({ renderer: renderer });
-            reportBody.innerHTML = marked.parse(data.analysis);
+            
+            reportBody.innerHTML = '';
+            
+            // Split markdown by H2 headers "## "
+            const rawSections = data.analysis.split(/^(?=##\s+)/m);
+            rawSections.forEach(section => {
+                const trimmed = section.trim();
+                if (!trimmed) return;
+                
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                card.innerHTML = marked.parse(trimmed);
+                reportBody.appendChild(card);
+            });
 
             // Render Citations
             if (data.citations && data.citations.length > 0) {

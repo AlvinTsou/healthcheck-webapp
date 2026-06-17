@@ -1,5 +1,6 @@
 import os
 import logging
+import datetime
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -54,7 +55,25 @@ except ValueError:
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "papago-reset-secret-2026")
 
 QUOTA_STORE_PATH = "quota_store.json"
+USAGE_LOG_PATH = "usage_log.jsonl"
 quota_lock = asyncio.Lock()
+
+def log_invite_code_usage(invite_code: str, file_name: str, file_size: int, status: str, error_detail: str = None):
+    log_entry = {
+        "timestamp": datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat(),
+        "invite_code": invite_code,
+        "file_name": file_name,
+        "file_size_bytes": file_size,
+        "status": status
+    }
+    if error_detail:
+        log_entry["error"] = error_detail
+    try:
+        with open(USAGE_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+        logger.info(f"Usage Logged: {invite_code} - {status}")
+    except Exception as e:
+        logger.error(f"Failed to write usage log: {str(e)}")
 
 def load_quota_store() -> dict:
     if not os.path.exists(QUOTA_STORE_PATH):
@@ -148,6 +167,7 @@ async def analyze_health_report(
     code_clean = invite_code.strip().upper() if invite_code else ""
     if code_clean not in INVITATION_CODES:
         await asyncio.sleep(1.0)  # 延遲防刷
+        log_invite_code_usage(code_clean, file.filename, 0, "invalid_code")
         raise HTTPException(
             status_code=403,
             detail="邀請碼無效，請聯繫管理員。"
@@ -157,6 +177,7 @@ async def analyze_health_report(
         quota_data = load_quota_store()
         used = quota_data.get(code_clean, 0)
         if used >= MAX_QUOTA:
+            log_invite_code_usage(code_clean, file.filename, 0, "quota_exhausted")
             raise HTTPException(
                 status_code=403,
                 detail="此邀請碼的配額已用盡。"
@@ -186,12 +207,20 @@ async def analyze_health_report(
         # System instructions to prevent medical hallucinations and enforce formatting
         system_instruction = (
             "你是一位專業的健康管理 AI 顧問。當使用者提供健檢報告或數據時，你必須精確對照知識庫中《健檢報告完全手冊》的醫學標準值與建議。\n"
-            "請遵循以下規則回答：\n"
-            "1. 你的回答必須緊密基於知識庫事實，提供醫學數據的衛教解釋與日常健康管理建議（如飲食、運動、生活習慣調整）。\n"
-            "2. 回答必須有條理、清晰易讀，並使用 Markdown 格式呈現。\n"
-            "3. 你的回答末尾務必加上以下免責聲明：\n"
+            "請遵循以下規則回答，且必須將分析內容結構化地劃分為以下四個大區塊，每個區塊開頭必須精確使用規定的 `##` 標題，不得自行更改或省略：\n\n"
+            "## 1. 健檢指標快速對照\n"
+            "（在此處以 Markdown 表格列出所有檢測數值與標準值的對比。表格必須包含項目、參考值、檢測值、狀態。如果有異常的數值，狀態欄必須填寫為 **偏高**、**偏低** 或 **異常**，以加粗的星號包裹，方便前端加亮顯示。）\n\n"
+            "## 2. 核心異常解析與潛在風險\n"
+            "（在此處詳細解釋上傳報告中異常指標的生理學成因以及可能帶來的長期健康風險。）\n\n"
+            "## 3. 個人化健康管理行動方案\n"
+            "（在此處提供具體可執行的飲食調整原則、適合的運動類型與頻率，以及日常起居作息之具體改善建議。）\n\n"
+            "## 4. 專屬諮詢解答\n"
+            "（在此處正面解答使用者最關心的諮詢問題。）\n\n"
+            "請注意：\n"
+            "1. 你的回答必須緊密基於知識庫事實，提供醫學數據的衛教解釋與日常健康管理建議。\n"
+            "2. 你的回答末尾務必加上以下免責聲明：\n"
             "   『【免責聲明】本分析僅供個人健康管理參考，不具備醫療診斷效力。若您的數據異常或有身體不適，請務必諮詢專業醫師進行診斷與治療。』\n"
-            "4. 如果相關標準或答案在知識庫中完全找不到，請禮貌地告知使用者，並引導使用者諮詢醫生，不要盲目猜測或虛構數據。"
+            "3. 如果相關標準或答案在知識庫中完全找不到，請禮貌地告知使用者，並引導使用者諮詢醫生，不要盲目猜測或虛構數據。"
         )
         
         # Define Grounding Tool
@@ -255,6 +284,7 @@ async def analyze_health_report(
                 seen.add(c["title"])
                 unique_citations.append(c)
                 
+        log_invite_code_usage(code_clean, file.filename, len(file_bytes), "success")
         return JSONResponse({
             "success": True,
             "analysis": ai_response_text,
@@ -271,6 +301,7 @@ async def analyze_health_report(
             quota_data[code_clean] = max(0, used - 1)
             save_quota_store(quota_data)
             
+        log_invite_code_usage(code_clean, file.filename, len(file_bytes) if 'file_bytes' in locals() else 0, "failed", str(g_err))
         return JSONResponse(
             status_code=502,
             content={
@@ -287,6 +318,7 @@ async def analyze_health_report(
             quota_data[code_clean] = max(0, used - 1)
             save_quota_store(quota_data)
             
+        log_invite_code_usage(code_clean, file.filename, len(file_bytes) if 'file_bytes' in locals() else 0, "failed", str(e))
         return JSONResponse(
             status_code=500,
             content={
