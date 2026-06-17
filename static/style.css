@@ -671,6 +671,13 @@ body {
         border-radius: 16px;
     }
     
+    .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    
     /* 2. Header and Titles */
     .logo h1 {
         font-size: 1.8rem;
