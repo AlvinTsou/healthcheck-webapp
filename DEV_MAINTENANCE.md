@@ -90,26 +90,38 @@
   * 依照瀏覽器指示重新登入擁有專案權限的 Google 帳戶並授權即可。
 * **GCP Compute Engine VM 部署環境**：
   * 在 VM 上執行時，SDK 會自動查詢 VM 關聯的 **Service Account** 權限，無須手動執行 `gcloud login`。
-  * 若出現權限錯誤，代表 VM 關聯的 Service Account 缺乏讀取 Vertex AI Search 的權限。
+  * 若出現權限錯誤，代表 VM 關聯 the Service Account 缺乏讀取 Vertex AI Search 的權限。
   * 請至 GCP 控制台的 **IAM & Admin** -> **IAM** 頁面，確認該 VM 關聯的服務帳戶（例如預設的 `Compute Engine default service account`）已被授予 **`Discovery Engine Viewer` (Discovery Engine 檢視者)** 角色。
+
+#### Cloudflare SSL 憑證更新 (Origin Certificate)
+當 Cloudflare SSL 憑證過期或需更換網域時，請依以下步驟更新 VM 上的憑證：
+1. 登入 Cloudflare，於 **SSL/TLS** -> **Origin Server** 重新產生並下載新的 Origin Certificate (PEM) 與 Private Key (Key)。
+2. 將新憑證與金鑰內容分別覆寫至 VM 專案目錄下的 `cloudflare.crt` 與 `cloudflare.key`。
+3. 於 VM 專案目錄下執行以下指令，即可在**不停機**的情況下熱載入新憑證：
+   ```bash
+   docker-compose exec nginx nginx -s reload
+   ```
 
 ### D. 日常運維與重啟服務 (GCP VM 環境)
 在 VM 上進行日常維護時，可使用以下指令管理 Docker 容器服務：
-* **重啟後端 WebApp 服務**（如更新了 `.env` 或程式碼）：
+* **重啟 WebApp 與 Nginx 服務**（如更新了 `.env` 或程式碼）：
   ```bash
   docker-compose down && docker-compose up -d --build
   ```
-* **即時查看後端 Log**：
+* **即時查看所有服務 Log**：
   ```bash
   docker-compose logs -f --tail=100
   ```
+* **分開查看指定服務 Log**：
+  * 僅查看 FastAPI 後端：`docker-compose logs -f web`
+  * 僅查看 Nginx 反向代理：`docker-compose logs -f nginx`
 * **查看容器運行狀態**：
   ```bash
   docker-compose ps
   ```
 
 ### E. 成本監控
-* 您可以在 GCP 控制台的 **Billing (帳單)** 頁面監控費用。
+* 您可以在 GCP 控制台 of **Billing (帳單)** 頁面監控費用。
 * 建議關注以下服務的用量：
   * **Vertex AI Search (Agent Builder)**：按查詢次數計費。
   * **Vertex AI (Gemini API)**：按輸入/輸出 Token 數量計費。
