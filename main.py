@@ -41,6 +41,44 @@ GCP_LOCATION = os.getenv("GCP_LOCATION", "global")
 GCP_DATASTORE_ID = os.getenv("GCP_DATASTORE_ID")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 
+import json
+import asyncio
+
+# MVP Invitation Quota System Config
+INVITATION_CODES_RAW = os.getenv("INVITATION_CODES", "")
+INVITATION_CODES = {code.strip().upper() for code in INVITATION_CODES_RAW.split(",") if code.strip()}
+try:
+    MAX_QUOTA = int(os.getenv("MAX_QUOTA", "50"))
+except ValueError:
+    MAX_QUOTA = 50
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "papago-reset-secret-2026")
+
+QUOTA_STORE_PATH = "quota_store.json"
+quota_lock = asyncio.Lock()
+
+def load_quota_store() -> dict:
+    if not os.path.exists(QUOTA_STORE_PATH):
+        try:
+            with open(QUOTA_STORE_PATH, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            return {}
+        except Exception as e:
+            logger.error(f"Failed to create quota store file: {str(e)}")
+            return {}
+    try:
+        with open(QUOTA_STORE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to read quota store file: {str(e)}")
+        return {}
+
+def save_quota_store(data: dict):
+    try:
+        with open(QUOTA_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to write quota store file: {str(e)}")
+
 # Initialize FastAPI
 app = FastAPI(title="HealthCheck WebApp Backend")
 
@@ -94,7 +132,8 @@ def health_check():
 @app.post("/api/analyze")
 async def analyze_health_report(
     file: UploadFile = File(...),
-    question: str = Form(...)
+    question: str = Form(...),
+    invite_code: str = Form(...)
 ):
     # Ensure client is initialized
     ai_client = get_genai_client()
@@ -104,6 +143,28 @@ async def analyze_health_report(
             status_code=400,
             detail="GCP_DATASTORE_ID 未設定。請參考 GCP_GUIDE.md 完成設定。"
         )
+        
+    # 邀請碼驗證與防暴破
+    code_clean = invite_code.strip().upper() if invite_code else ""
+    if code_clean not in INVITATION_CODES:
+        await asyncio.sleep(1.0)  # 延遲防刷
+        raise HTTPException(
+            status_code=403,
+            detail="邀請碼無效，請聯繫管理員。"
+        )
+        
+    async with quota_lock:
+        quota_data = load_quota_store()
+        used = quota_data.get(code_clean, 0)
+        if used >= MAX_QUOTA:
+            raise HTTPException(
+                status_code=403,
+                detail="此邀請碼的配額已用盡。"
+            )
+        # 先扣減額度以防併發超用
+        quota_data[code_clean] = used + 1
+        save_quota_store(quota_data)
+        remaining = MAX_QUOTA - (used + 1)
         
     try:
         # Read the uploaded file bytes
@@ -197,11 +258,19 @@ async def analyze_health_report(
         return JSONResponse({
             "success": True,
             "analysis": ai_response_text,
-            "citations": unique_citations
+            "citations": unique_citations,
+            "remaining_quota": remaining
         })
         
     except APIError as g_err:
         logger.error(f"Google API Error: {str(g_err)}")
+        # 發生錯誤，退回額度
+        async with quota_lock:
+            quota_data = load_quota_store()
+            used = quota_data.get(code_clean, 1)
+            quota_data[code_clean] = max(0, used - 1)
+            save_quota_store(quota_data)
+            
         return JSONResponse(
             status_code=502,
             content={
@@ -211,6 +280,13 @@ async def analyze_health_report(
         )
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
+        # 發生錯誤，退回額度
+        async with quota_lock:
+            quota_data = load_quota_store()
+            used = quota_data.get(code_clean, 1)
+            quota_data[code_clean] = max(0, used - 1)
+            save_quota_store(quota_data)
+            
         return JSONResponse(
             status_code=500,
             content={
@@ -218,6 +294,34 @@ async def analyze_health_report(
                 "detail": f"伺服器內部錯誤：{str(e)}"
             }
         )
+
+# Quota reset endpoint
+@app.post("/api/reset")
+async def reset_quota(
+    token: str = Form(...)
+):
+    if token != ADMIN_TOKEN:
+        await asyncio.sleep(1.0)  # 延遲防刷
+        raise HTTPException(
+            status_code=403,
+            detail="管理憑證 Token 無效。"
+        )
+        
+    async with quota_lock:
+        try:
+            with open(QUOTA_STORE_PATH, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            logger.info("Quota store successfully reset by admin.")
+            return JSONResponse({
+                "success": True,
+                "message": "所有邀請碼之已用配額已重置歸零。"
+            })
+        except Exception as e:
+            logger.error(f"Failed to reset quota store: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"重置失敗：{str(e)}"
+            )
 
 # Serve Frontend static assets
 # Place this at the end to avoid routing conflicts

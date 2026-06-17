@@ -63,6 +63,12 @@
                         </div>
                     </div>
 
+                    <!-- Invite Code Input -->
+                    <div class="form-group">
+                        <label for="invite-input">授權邀請碼</label>
+                        <input type="text" id="invite-input" placeholder="請輸入群組邀請碼 (必填)" required style="width: 100%; padding: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #fff; font-family: inherit; font-size: 0.95rem; outline: none; transition: all 0.3s;" onfocus="this.style.borderColor='rgba(0, 242, 254, 0.5)'; this.style.boxShadow='0 0 10px rgba(0, 242, 254, 0.1)';" onblur="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.boxShadow='none';" autocomplete="off" />
+                    </div>
+
                     <!-- Question Input -->
                     <div class="form-group">
                         <label for="question-input">您的諮詢問題</label>
@@ -82,7 +88,10 @@
             <section class="panel result-panel">
                 <div class="panel-header">
                     <h2>分析結果</h2>
-                    <span class="status-badge idle" id="status-badge">等待輸入</span>
+                    <div style="display: flex; gap: 8px;">
+                        <span class="status-badge idle" id="status-badge">等待輸入</span>
+                        <span class="status-badge" id="quota-badge" style="background: rgba(0, 242, 254, 0.1); border-color: rgba(0, 242, 254, 0.2); color: #00f2fe; display: none;">剩餘額度: -- 次</span>
+                    </div>
                 </div>
                 
                 <div class="result-content">

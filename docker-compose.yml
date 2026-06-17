@@ -9,6 +9,7 @@ services:
       - .env
     volumes:
       - ./gcp-key.json:/app/gcp-key.json
+      - ./quota_store.json:/app/quota_store.json
     restart: always
 
   nginx:

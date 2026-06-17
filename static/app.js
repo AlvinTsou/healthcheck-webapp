@@ -7,6 +7,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.getElementById('submit-btn');
     const analyzeForm = document.getElementById('analyze-form');
     
+    const inviteInput = document.getElementById('invite-input');
+    const quotaBadge = document.getElementById('quota-badge');
+    
     // Result panels
     const statusBadge = document.getElementById('status-badge');
     const resultIdle = document.getElementById('result-idle');
@@ -134,19 +137,22 @@ document.addEventListener('DOMContentLoaded', () => {
     function checkFormValidity() {
         const hasFile = selectedFile !== null;
         const hasQuestion = questionInput.value.trim().length > 0;
-        submitBtn.disabled = !(hasFile && hasQuestion);
+        const hasInvite = inviteInput.value.trim().length > 0;
+        submitBtn.disabled = !(hasFile && hasQuestion && hasInvite);
     }
 
     questionInput.addEventListener('input', checkFormValidity);
+    inviteInput.addEventListener('input', checkFormValidity);
 
     // --- Submit Form ---
     analyzeForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (!selectedFile || !questionInput.value.trim()) return;
+        if (!selectedFile || !questionInput.value.trim() || !inviteInput.value.trim()) return;
 
         // UI States
         submitBtn.disabled = true;
         questionInput.disabled = true;
+        inviteInput.disabled = true;
         if (document.getElementById('remove-file-btn')) {
             document.getElementById('remove-file-btn').disabled = true;
         }
@@ -162,6 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('question', questionInput.value.trim());
+        formData.append('invite_code', inviteInput.value.trim());
 
         try {
             const response = await fetch('/api/analyze', {
@@ -180,6 +187,14 @@ document.addEventListener('DOMContentLoaded', () => {
             statusBadge.className = 'status-badge success';
             resultLoading.classList.add('hidden');
             resultSuccess.classList.remove('hidden');
+
+            // Render Quota Badge
+            if (data.remaining_quota !== undefined) {
+                quotaBadge.textContent = `剩餘額度: ${data.remaining_quota} 次`;
+                quotaBadge.style.display = 'inline-block';
+            } else {
+                quotaBadge.style.display = 'none';
+            }
 
             // Render Markdown
             // Config marked to open links in new tab
@@ -217,12 +232,14 @@ document.addEventListener('DOMContentLoaded', () => {
             statusBadge.className = 'status-badge idle';
             resultLoading.classList.add('hidden');
             resultIdle.classList.remove('hidden');
+            quotaBadge.style.display = 'none';
             
             alert(`錯誤：${error.message}`);
         } finally {
             // Restore UI states
             submitBtn.disabled = false;
             questionInput.disabled = false;
+            inviteInput.disabled = false;
             if (document.getElementById('remove-file-btn')) {
                 document.getElementById('remove-file-btn').disabled = false;
             }
