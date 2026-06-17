@@ -658,3 +658,84 @@ body {
     transform: translateY(-1px);
     box-shadow: 0 0 10px rgba(79, 172, 254, 0.15);
 }
+
+/* --- Mobile Portrait Layout Optimization (max-width: 576px) --- */
+@media (max-width: 576px) {
+    /* 1. Page Margin & Padding */
+    .app-container {
+        padding: 20px 12px;
+    }
+    
+    .panel {
+        padding: 20px 16px;
+        border-radius: 16px;
+    }
+    
+    /* 2. Header and Titles */
+    .logo h1 {
+        font-size: 1.8rem;
+    }
+    
+    .subtitle {
+        font-size: 0.9rem;
+    }
+    
+    .panel-header h2 {
+        font-size: 1.25rem;
+    }
+    
+    /* 3. Inputs (Forcing 16px to prevent iOS auto-zoom) */
+    .form-group input, 
+    .form-group textarea,
+    #invite-input {
+        font-size: 16px !important;
+        padding: 12px !important;
+    }
+    
+    .form-group textarea {
+        height: 100px;
+    }
+    
+    /* 4. Compact Upload Area */
+    .drop-zone {
+        padding: 24px 12px;
+    }
+    
+    /* Hide drag option for mobile, highlight click option */
+    .main-prompt {
+        display: none !important;
+    }
+    
+    .sub-prompt {
+        font-size: 1.05rem;
+        font-weight: 500;
+        color: #ffffff;
+    }
+    
+    /* 5. Responsive Medical Data Tables */
+    .markdown-body table {
+        display: block;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border-spacing: 0;
+        margin-bottom: 16px;
+    }
+    
+    .markdown-body th, 
+    .markdown-body td {
+        padding: 8px 10px;
+        font-size: 0.85rem;
+        white-space: nowrap; /* Avoid awkward line breaks inside data cells */
+    }
+    
+    /* 6. General Layout */
+    .main-content {
+        gap: 20px;
+    }
+    
+    /* Disable floating background animation on mobile to boost scroll FPS */
+    .glow-circle {
+        animation: none !important;
+    }
+}
