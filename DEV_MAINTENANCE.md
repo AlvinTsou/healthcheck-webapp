@@ -128,3 +128,40 @@
   * **Compute Engine VM 與 GCS**：
     * `e2-micro` 實例若部署在台灣 `asia-east1` 每月約 **$8.86 USD**（若部署於美國免費區域且符合免費層資格則為 $0）。
     * GCS 與磁碟依儲存空間與網路流量計費。
+
+### F. 邀請碼與配額系統管理 (MVP)
+
+本專案在 MVP 階段採用輕量級的邀請碼共用配額防刷機制。配額已用次數記錄在 VM 專案目錄下的 `quota_store.json` 檔案中，並已掛載為 Docker Volume。
+
+#### 1. 重置邀請碼配額 (Reset Quotas)
+您可以透過以下三種方式之一重置所有邀請碼的配額：
+* **方法一：手動刪除（推薦，最方便）**：
+  直接在 VM 專案目錄下刪除 `quota_store.json`。後端檢測到檔案不存在時會自動重新初始化為空狀態，因此**免重啟服務，立即生效**：
+  ```bash
+  rm ~/healthcheck-webapp/quota_store.json
+  ```
+* **方法二：手動編輯（微調額度）**：
+  使用 nano 編輯該狀態檔，手動將特定邀請碼的已用次數改回需要的數值（如改回 `0`），修改存檔後**立即生效，免重啟**：
+  ```bash
+  nano ~/healthcheck-webapp/quota_store.json
+  ```
+* **方法三：透過管理員 API 一鍵重置**：
+  在本地或 VM 上執行以下 API 呼叫，傳送您在環境變數設定的 `ADMIN_TOKEN` 進行驗證：
+  ```bash
+  curl -X POST \
+    -F "token=您的ADMIN_TOKEN" \
+    https://healthreportview.papagopro.com/api/reset
+  ```
+
+#### 2. 新增、變更邀請碼或最高配額
+1. 登入 VM 並編輯 `.env` 檔案：
+   ```bash
+   nano ~/healthcheck-webapp/.env
+   ```
+2. 修改對應變數：
+   * `INVITATION_CODES`：以英文逗號分隔（如 `PAPAGO2026,VIP888,NEWYEAR`）。
+   * `MAX_QUOTA`：每組邀請碼的最高配額使用次數（如 `100`）。
+3. 存檔後重啟 Docker 容器以套用新配置：
+   ```bash
+   docker-compose down && docker-compose up -d --build
+   ```
