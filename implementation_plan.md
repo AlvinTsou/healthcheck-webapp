@@ -112,35 +112,29 @@ HealthCheck WebApp/
 #### [NEW] [docker-compose.yml](file:///Users/alvintsou/Documents/Projects/healthcheck-webapp/docker-compose.yml)
 *   提供本機及 VPS 多容器環境的啟動配置，將金鑰掛載進容器，並限制系統資源。
 
-#### 最佳部署方案 (VPS 與 Zeabur 混合架構)
-由於伺服器的主機 Port 80 與 443 已被既存的 `pokerroom-nginx` 與 `n8n-caddy` 佔用，為避免衝突並讓 Zeabur 與其他服務和平共處，部署策略如下：
+#### 最佳部署方案 (GCP Compute Engine VM 部署)
+基於您建立的 VM 執行個體 `hrv001`（可用區 `asia-east1-c`，外部 IP `35.236.168.126`），我們將使用 Docker Compose 在 VM 上進行部署：
 
-1.  **修正 Zeabur (K3s) Ingress Controller 狀態** (已完成)：
-    *   將 Zeabur 內部的 `ingress-controller` DaemonSet 調整為 `hostNetwork: false`，避免其與主機的 80/443 Port 產生衝突。
-    *   新增一個 `NodePort` 服務 (`ingress-controller-nodeport`)，將 K3s 內部的 Ingress 暴露在主機的 Port `30080` (HTTP) 與 `30443` (HTTPS)。
-2.  **服務部署**：
-    *   **方式一：透過 Zeabur CLI 遠端部署**：
-        1. 本地使用 API Key 登入：`npx zeabur auth login --token <TOKEN>`。
-        2. 專案根目錄下執行：`npx zeabur deploy`。
-        3. 在 Zeabur 網頁控制台設定環境變數與 Config 掛載金鑰。
-        4. 外部流量路由：在伺服器的 `n8n-caddy` 或 `pokerroom-nginx` 中，將該服務網域的請求反向代理（`reverse_proxy`）至 `http://localhost:30080`。
-    *   **方式二：使用 Docker Compose 直接在 VPS 部署**：
-        1. 透過 Git 將專案拉取至伺服器。
-        2. 將 `gcp-key.json` 上傳至伺服器專案目錄下。
-        3. 執行 `sudo docker compose up -d --build`，服務將運行在 Port `8000`。
-        4. 外部流量路由：在伺服器的 Caddy 或 Nginx 設定中，將網域請求反向代理至 `http://localhost:8000`。
+1. **IAM 與 服務帳戶 授權**：
+   * 將 VM 的 Service Account 授予 `Discovery Engine Viewer` (Discovery Engine 檢視者) 角色。此原生方式免除了金鑰檔案維護的安全風險。
+2. **防火牆配置**：
+   * 在 VPC 網路設定防火牆規則（如 `allow-healthcheck-port`），允許來自 `0.0.0.0/0` 存取 TCP Port `8000`。
+3. **VM 部署**：
+   * 透過 SSH 連線至 VM：`gcloud compute ssh hrv001 --zone=asia-east1-c`。
+   * 安裝 Git, Docker, Docker Compose。
+   * 將專案複製到 VM，建立 `.env` 配置文件。
+   * 建立一個空的 `gcp-key.json` 以確保 Docker volumes 掛載不報錯。
+   * 執行 `docker-compose up -d --build` 啟動服務，監聽於 Port `8000`。
 
 ## Verification Plan
 
 ### Manual Verification
-1.  **GCP 設定與認證**：
-    *   依照 `GCP_GUIDE.md` 設定 Data Store，並於本地執行 `gcloud auth application-default login`。
-    *   建立 `.env` 檔案並填入正確的 `GCP_PROJECT_ID` 及 `GCP_DATASTORE_ID`。
-2.  **本地啟動測試**：
-    *   執行 `uvicorn main:app --reload --port 8000`。
-    *   在瀏覽器打開 `http://localhost:8000`。
-3.  **Zeabur (K3s) 狀態確認**：
-    *   在伺服器上執行 `sudo kubectl get pods -n default -l app.kubernetes.io/name=ingress-controller`，確認狀態為 `Running` (1/1)。
-4.  **端到端功能測試**：
-    *   上傳測試用的健檢報告圖片，輸入問題並送出，確認 AI 回答是否正確參考了您上傳手冊的數據，且帶有 Citation。
+1. **GCP 設定與認證**：
+   * 依照 `GCP_GUIDE.md` 設定 Data Store，並為 VM Service Account 設定 IAM 權限。
+   * 建立 `.env` 檔案並填入正確的 `GCP_PROJECT_ID` 及 `GCP_DATASTORE_ID`。
+2. **VM 啟動與外部連線測試**：
+   * 於 VM 執行 `docker-compose up -d --build`。
+   * 在本機瀏覽器輸入 `http://35.236.168.126:8000`，確認是否能成功載入毛玻璃風格的前端網頁。
+3. **端到端功能測試**：
+   * 在網頁上傳測試報告圖片並提問，確認後端能夠在不需要上傳金鑰的狀況下，利用 VM 的 Service Account 與 Vertex AI Search Data Store 對接，並回傳帶有引用來源 (Citations) 的分析回答。
 

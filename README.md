@@ -80,6 +80,44 @@ macOS 系統已內建 Python 3，請打開「終端機 (Terminal)」並執行以
 
 ---
 
+## ☁️ 運行指引 (Google Cloud VM 部署)
+
+當您在 Google Cloud Compute Engine 建立好 VM 執行個體（例如 `hrv001`）後，請參考以下步驟進行部署：
+
+1. **環境前置設定**：
+   * 請先閱讀 [GCP_GUIDE.md](GCP_GUIDE.md) 的 **第六步**，完成 VM 的 Service Account 授權（新增 `Discovery Engine Viewer` 角色）以及 VPC 防火牆規則設定（允許 Port `8000`）。
+
+2. **登入 VM 並安裝環境**：
+   * 連線至 VM 並安裝 Git 與 Docker 容器環境：
+     ```bash
+     sudo apt-get update
+     sudo apt-get install -y git docker.io docker-compose
+     sudo systemctl start docker
+     sudo systemctl enable docker
+     sudo usermod -aG docker $USER
+     ```
+     *提示：設定完成後請重新連線 SSH。*
+
+3. **複製專案與設定**：
+   ```bash
+   git clone <您的 GitHub 儲存庫 URL> healthcheck-webapp
+   cd healthcheck-webapp
+   cp .env.example .env
+   # 編輯 .env 填入 GCP_PROJECT_ID 與 GCP_DATASTORE_ID
+   # 建立空的 gcp-key.json 以免 docker-compose 掛載錯誤
+   touch gcp-key.json
+   ```
+
+4. **啟動 WebApp**：
+   ```bash
+   docker-compose up -d --build
+   ```
+
+5. **開啟網頁**：
+   * 打開瀏覽器存取 `http://<您的 VM 外部 IP>:8000`（例如 `http://35.236.168.126:8000`）。
+
+---
+
 ## 📤 上傳至 GitHub 專案庫 (Repository)
 
 若您想將此專案作為一個獨立的 Git 倉庫上傳至 GitHub，請遵循以下步驟：

@@ -7,3 +7,10 @@ __pycache__/
 docs/
 gcp-key.json
 
+# Certificates and Private Keys
+cloudflare.crt
+cloudflare.key
+*.key
+*.crt
+*.pem
+

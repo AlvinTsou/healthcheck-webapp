@@ -75,21 +75,44 @@
 當醫學對照標準有更新，或是有新的健檢解讀文件需要匯入時：
 1. 登入 **GCP Console**，前往您的 **Cloud Storage (GCS)**。
 2. 進入對應的 Bucket（例如 `gs://healthcheck-handbook-xxx/`），上傳新的圖片或 PDF 文件。
-3. 前往 **Vertex AI Search** 控制台，選擇您的 Data Store (`healthcheck-handbook-ds`)。
-4. 點選 **Import (匯入)** 或等待自動同步，讓系統對新文件進行 OCR 解析與索引建立（可能需要 5 ~ 10 分鐘）。
+3. 前往 **Agent Builder** 控制台，選擇您的 Data Store (`healthcheck-handbook-ds`)。
+4. 點選 **Data** 分頁，選擇 **Import** 匯入新文件，讓系統對新文件進行 OCR 解析與索引建立（可能需要 5 ~ 10 分鐘）。
 5. 匯入完成後，WebApp API 會自動檢索到最新的手冊內容，無需重新部署後端代碼。
 
 ### C. 憑證與認證過期維護
-若後端拋出 `DefaultCredentialsError` 或是存取 Vertex AI 權限不足的 403 錯誤，通常是因為本地的 Application Default Credentials (ADC) 已過期：
-* 請在您的終端機重新執行驗證指令：
-  ```bash
-  gcloud auth application-default login
-  ```
-* 依照瀏覽器指示重新登入 Google 帳戶並點選授權即可。
+當系統存取 Vertex AI 拋出 `DefaultCredentialsError` 或是 403 權限不足錯誤時，請依環境確認以下設定：
+* **本地開發環境**：
+  * 通常是因為本地的 Application Default Credentials (ADC) 已過期。
+  * 請在您的終端機重新執行驗證指令：
+    ```bash
+    gcloud auth application-default login
+    ```
+  * 依照瀏覽器指示重新登入擁有專案權限的 Google 帳戶並授權即可。
+* **GCP Compute Engine VM 部署環境**：
+  * 在 VM 上執行時，SDK 會自動查詢 VM 關聯的 **Service Account** 權限，無須手動執行 `gcloud login`。
+  * 若出現權限錯誤，代表 VM 關聯的 Service Account 缺乏讀取 Vertex AI Search 的權限。
+  * 請至 GCP 控制台的 **IAM & Admin** -> **IAM** 頁面，確認該 VM 關聯的服務帳戶（例如預設的 `Compute Engine default service account`）已被授予 **`Discovery Engine Viewer` (Discovery Engine 檢視者)** 角色。
 
-### D. 成本監控
+### D. 日常運維與重啟服務 (GCP VM 環境)
+在 VM 上進行日常維護時，可使用以下指令管理 Docker 容器服務：
+* **重啟後端 WebApp 服務**（如更新了 `.env` 或程式碼）：
+  ```bash
+  docker-compose down && docker-compose up -d --build
+  ```
+* **即時查看後端 Log**：
+  ```bash
+  docker-compose logs -f --tail=100
+  ```
+* **查看容器運行狀態**：
+  ```bash
+  docker-compose ps
+  ```
+
+### E. 成本監控
 * 您可以在 GCP 控制台的 **Billing (帳單)** 頁面監控費用。
 * 建議關注以下服務的用量：
   * **Vertex AI Search (Agent Builder)**：按查詢次數計費。
   * **Vertex AI (Gemini API)**：按輸入/輸出 Token 數量計費。
-  * **Cloud Run 與 GCS**：按運算時間與儲存空間計費。
+  * **Compute Engine VM 與 GCS**：
+    * `e2-micro` 實例若部署在台灣 `asia-east1` 每月約 **$8.86 USD**（若部署於美國免費區域且符合免費層資格則為 $0）。
+    * GCS 與磁碟依儲存空間與網路流量計費。
