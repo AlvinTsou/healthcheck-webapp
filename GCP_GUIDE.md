@@ -97,16 +97,16 @@
 5. 點選 **儲存 (Save)**。
 *提示：使用服務帳戶驗證是 GCP 的安全最佳實踐。您不需要在 VM 上執行 `gcloud auth application-default login`，也不需要上傳任何 `.json` 金鑰檔案，GCP SDK 便會自動載入此服務帳戶權限！*
 
-### 2. 設定 VPC 防火牆規則（開啟 Port 8000）
-預設本 WebApp 運作在 Port `8000`。若要讓外部使用者能直接透過外部 IP 存取 WebApp，您需要建立防火牆規則：
+### 2. 設定 VPC 防火牆規則（開啟 Port 80 與 443）
+本系統使用 Nginx 作為 Ingress (反向代理)，外部請求將透過標準 HTTP (Port 80) 與 HTTPS (Port 443) 傳入，因此您需要開通這兩個連接埠的防火牆規則：
 1. 進入 [GCP 控制台的防火牆頁面](https://console.cloud.google.com/net-security/firewall-rules)。
 2. 點選上方 **建立防火牆規則 (Create Firewall Rule)**。
 3. 填入以下配置：
-   * **名稱 (Name)**：`allow-healthcheck-port`
+   * **名稱 (Name)**：`allow-http-https`
    * **目標 (Targets)**：選擇 **網路中的所有執行個體 (All instances in the network)**。
    * **來源過濾器 (Source filter)**：選擇 **IPv4 範圍 (IPv4 ranges)**。
-   * **來源 IPv4 範圍 (Source IPv4 ranges)**：輸入 `0.0.0.0/0`（允許所有外部 IP 存取，或者您可以輸入您的特定 IP 範圍以提高安全性）。
-   * **通訊協定和連接埠 (Protocols and ports)**：勾選 **指定的通訊協定和連接埠 (Specified protocols and ports)** -> 勾選 **TCP** -> 輸入 `8000`。
+   * **來源 IPv4 範圍 (Source IPv4 ranges)**：輸入 `0.0.0.0/0` (允許所有外部 IP 存取)。
+   * **通訊協定和連接埠 (Protocols and ports)**：勾選 **指定的通訊協定和連接埠 (Specified protocols and ports)** -> 勾選 **TCP** -> 輸入 `80,443`。
 4. 點選 **建立 (Create)**。
 
 ### 3. SSH 連線至 VM 並部署環境
@@ -125,31 +125,29 @@
    ```
    *注意：執行完 `usermod` 後，請輸入 `exit` 登出並重新連線 SSH，該群組設定才會生效。*
 
-### 4. 複製專案與啟動服務
+### 4. 複製專案、設定憑證與啟動服務
 1. 重新連線 SSH 後，將本專案的 GitHub 儲存庫複製到 VM 上：
    ```bash
    git clone <您的 GitHub 儲存庫 URL> healthcheck-webapp
    cd healthcheck-webapp
    ```
-2. 建立 `.env` 檔案：
+2. 建立 `.env` 檔案並填入變數：
    ```bash
    cp .env.example .env
+   # 編輯 .env (使用 nano .env) 填入您的 GCP_PROJECT_ID 與 GCP_DATASTORE_ID
    ```
-3. 編輯 `.env` 檔案（例如使用 `nano .env`），修改以下變數：
-   ```env
-   GCP_PROJECT_ID=您的GCP專案ID
-   GCP_LOCATION=global
-   GCP_DATASTORE_ID=您的Data Store ID
-   GEMINI_MODEL=gemini-1.5-pro
-   ```
+3. 建立並設定 Cloudflare SSL 憑證（用於對接 Cloudflare 代理以支援安全連線）：
+   * 在專案目錄下，將您在 Cloudflare 產生的 **Origin Certificate** 內容寫入 `cloudflare.crt`。
+   * 將 **Private Key** 內容寫入 `cloudflare.key`。
+   * *提示：您可以使用 `nano cloudflare.crt` 與 `nano cloudflare.key` 分別進行貼上。*
 4. 建立一個空的 `gcp-key.json` 以免 Docker Compose 掛載失敗（因為在 VM 上我們使用 Service Account 權限，所以不需要實際寫入金鑰內容）：
    ```bash
    touch gcp-key.json
    ```
-5. 啟動 Docker 容器：
+5. 啟動 Docker 服務（這會同時啟動 FastAPI 服務與 Nginx 反向代理）：
    ```bash
    docker-compose up -d --build
    ```
 6. 驗證服務：
-   打開瀏覽器存取 `http://35.236.168.126:8000`，即可開始使用健檢報告分析服務！
+   打開瀏覽器直接存取您的網域 `https://healthreportview.papagopro.com`，即可透過安全加密的 HTTPS 連線開始使用健檢報告分析服務！
 
