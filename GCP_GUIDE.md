@@ -151,3 +151,36 @@
 6. 驗證服務：
    打開瀏覽器直接存取您的網域 `https://healthreportview.papagopro.com`，即可透過安全加密的 HTTPS 連線開始使用健檢報告分析服務！
 
+---
+
+## 第七步：後續維護：上傳與匯入新健檢手冊 (Updating the RAG Knowledge Base)
+
+當您有新的健檢解讀 PDF 手冊或醫學文件需要加入 AI 知識庫時，請依循以下步驟進行更新，以確保資料庫能正確解析：
+
+### 1. 將新文件上傳至 Cloud Storage (GCS)
+1. 登入 [GCP 控制台](https://console.cloud.google.com/)。
+2. 進入 **Cloud Storage**，找到您的 Bucket（例如：`ealthcheck-handbook-001`）。
+3. 點擊 **上傳檔案 (Upload Files)**，將您的新 PDF 文件（如 `De_健檢報告完全手冊.pdf`）上傳至 Bucket 中。
+
+### 2. 將新文件匯入至 Vertex AI Search Data Store
+1. 在 GCP 控制台搜尋並進入 **Agent Builder**。
+2. 點擊左側選單的 **資料儲存庫 (Data Stores)**，點選進入您綁定的 Data Store。
+3. 點選 **資料 (Data)** 頁籤，然後點擊 **匯入資料 (Import Data)**。
+4. 在右側抽屜式選單中進行以下設定：
+   * **選取要匯入的資料夾或檔案**：
+     * **建議選擇「資料夾」**（比單獨匯入「檔案」更不容易出錯）：
+       * 點選「資料夾」按鈕。
+       * 輸入路徑格式為：`gs://您的Bucket名稱`（例如：`gs://ealthcheck-handbook-001`）。
+       * *注意：請確保輸入框的開頭與結尾無多餘的空白字元，否則系統會報出 Bucket 名稱格式不合法的錯誤。*
+     * **若選擇「檔案」**：
+       * 點選「檔案」按鈕。
+       * 輸入路徑格式必須包含完整路徑與檔名，例如：`gs://ealthcheck-handbook-001/De_健檢報告完全手冊.pdf`。
+   * **What kind of data are you importing? (您要匯入哪種資料？)**：
+     * 勾選 **文件 (File)**，其支援 PDF, HTML, TXT 等格式之非結構化文件。
+5. 點擊 **匯入 (Import)** 啟動作業。
+
+### 3. 檢查解析進度與自動套用
+1. 點擊 Data Store 頁面中的 **活動 (Activity)** 頁籤。
+2. 匯入大於 `50 MB` 的 PDF 檔案時，因為系統需要進行 OCR 與文本向量化，背景解析大約需要 **5 至 15 分鐘**。
+3. 當活動記錄的狀態由 `Importing` 轉變為 `Completed`，代表解析已完成。
+4. 新資料解析完成後會**立即自動套用**。FastAPI 後端與 VM 上的 Docker 服務**完全無須重啟**，下次提問時 AI 便會即時使用新版手冊進行接地分析。
