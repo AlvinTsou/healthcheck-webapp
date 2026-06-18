@@ -19,9 +19,15 @@ from firebase_admin import credentials, firestore
 
 # Initialize Firebase Admin SDK
 try:
-    # Use Application Default Credentials (ADC) automatically
-    firebase_admin.initialize_app()
-    logging.info("Firebase Admin initialized successfully using Application Default Credentials.")
+    cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if cred_path and os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+        logging.info(f"Firebase Admin initialized successfully using Certificate from {cred_path}.")
+    else:
+        # Use Application Default Credentials (ADC) automatically
+        firebase_admin.initialize_app()
+        logging.info("Firebase Admin initialized successfully using Application Default Credentials.")
 except ValueError:
     # App already initialized
     pass
@@ -196,7 +202,11 @@ def get_firebase_config():
             "projectId": GCP_PROJECT_ID,
             "storageBucket": FIREBASE_STORAGE_BUCKET,
             "messagingSenderId": FIREBASE_MESSAGING_SENDER_ID,
-            "appId": FIREB# Background job to analyze report asynchronously
+            "appId": FIREBASE_APP_ID
+        }
+    }
+
+# Background job to analyze report asynchronously
 async def async_analyze_job(
     task_id: str,
     file_bytes: bytes,
@@ -371,36 +381,91 @@ async def async_analyze_job(
 
 
 # Helper function to delete documents older than 7 days in Firebase
+import time
+LAST_CLEANUP_TIME = 0.0
+CLEANUP_INTERVAL_SECONDS = 600  # 10 minutes interval
+cleanup_lock = asyncio.Lock()
+
 async def clean_old_firebase_tasks():
-    logger.info("Starting background Firebase Firestore cleanup check...")
-    try:
-        db = firestore.client()
-        # Calculate timezone-aware timestamp for 7 days ago
-        seven_days_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+    global LAST_CLEANUP_TIME
+    
+    current_time = time.time()
+    if current_time - LAST_CLEANUP_TIME < CLEANUP_INTERVAL_SECONDS:
+        logger.info("Firebase Cleanup: Skipped (interval not met yet).")
+        return
         
-        # Query Firestore documents older than 7 days
-        query = db.collection("analysis_tasks").where("created_at", "<", seven_days_ago)
-        docs = query.stream()
-        
-        deleted_count = 0
-        batch = db.batch()
-        for doc in docs:
-            batch.delete(doc.reference)
-            deleted_count += 1
-            # Commit batch every 500 documents (Firestore limit)
-            if deleted_count % 500 == 0:
-                batch.commit()
-                batch = db.batch()
-        
-        if deleted_count % 500 != 0:
-            batch.commit()
+    async with cleanup_lock:
+        # Double check inside lock
+        if time.time() - LAST_CLEANUP_TIME < CLEANUP_INTERVAL_SECONDS:
+            return
             
-        if deleted_count > 0:
-            logger.info(f"Firebase Cleanup: Successfully deleted {deleted_count} old task documents.")
-        else:
-            logger.info("Firebase Cleanup: No tasks older than 7 days found.")
-    except Exception as e:
-        logger.error(f"Failed to cleanup old Firebase tasks: {str(e)}")
+        logger.info("Starting background Firebase Firestore cleanup check...")
+        try:
+            db = firestore.client()
+            
+            # 1. Delete tasks older than 7 days
+            seven_days_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+            query = db.collection("analysis_tasks").where("created_at", "<", seven_days_ago)
+            docs = query.stream()
+            
+            deleted_count = 0
+            batch = db.batch()
+            for doc in docs:
+                batch.delete(doc.reference)
+                deleted_count += 1
+                # Commit batch every 500 documents (Firestore limit)
+                if deleted_count % 500 == 0:
+                    batch.commit()
+                    batch = db.batch()
+            
+            if deleted_count % 500 != 0:
+                batch.commit()
+                
+            if deleted_count > 0:
+                logger.info(f"Firebase Cleanup: Successfully deleted {deleted_count} old task documents by age.")
+            else:
+                logger.info("Firebase Cleanup: No tasks older than 7 days found.")
+                
+            # 2. Capacity-based truncation to ensure storage remains well under 1 GB limit
+            try:
+                max_tasks_limit = int(os.getenv("FIREBASE_MAX_TASKS_LIMIT", "3000"))
+            except ValueError:
+                max_tasks_limit = 3000
+                
+            # Efficiently count documents
+            count_query = db.collection("analysis_tasks").count()
+            results = count_query.get()
+            total_count = results[0][0].value
+            
+            if total_count > max_tasks_limit:
+                excess_count = total_count - max_tasks_limit
+                logger.info(f"Firebase Cleanup: Total documents ({total_count}) exceeds limit ({max_tasks_limit}). Deleting {excess_count} oldest documents.")
+                
+                # Fetch excess_count oldest tasks ordered by created_at
+                excess_query = db.collection("analysis_tasks").order_by("created_at", direction=firestore.Query.ASCENDING).limit(excess_count)
+                excess_docs = excess_query.stream()
+                
+                excess_deleted = 0
+                batch = db.batch()
+                for doc in excess_docs:
+                    batch.delete(doc.reference)
+                    excess_deleted += 1
+                    if excess_deleted % 500 == 0:
+                        batch.commit()
+                        batch = db.batch()
+                        
+                if excess_deleted % 500 != 0:
+                    batch.commit()
+                    
+                logger.info(f"Firebase Cleanup: Successfully deleted {excess_deleted} oldest task documents by limit.")
+            else:
+                logger.info(f"Firebase Cleanup: Total documents ({total_count}) is within limit ({max_tasks_limit}).")
+                
+            # Update last cleanup time
+            LAST_CLEANUP_TIME = time.time()
+            
+        except Exception as e:
+            logger.error(f"Failed to cleanup old Firebase tasks: {str(e)}")
 
 
 # Non-blocking analysis endpoint
