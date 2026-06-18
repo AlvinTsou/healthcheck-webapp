@@ -33,6 +33,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const inviteInput = document.getElementById('invite-input');
     const quotaBadge = document.getElementById('quota-badge');
     
+    // Automatically populate invite code from URL query parameters (?code=XXX or ?invite=XXX)
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeParam = urlParams.get('code') || urlParams.get('invite');
+    if (codeParam && inviteInput) {
+        inviteInput.value = codeParam.trim().toUpperCase();
+        // Trigger input event to update submit button disabled state
+        setTimeout(() => {
+            inviteInput.dispatchEvent(new Event('input'));
+        }, 100);
+    }
+    
     // Result panels
     const statusBadge = document.getElementById('status-badge');
     const resultIdle = document.getElementById('result-idle');
