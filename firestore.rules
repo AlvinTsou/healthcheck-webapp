@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 僅允許前端讀取與即時監聽分析任務狀態，限制寫入權限（寫入由後端 Admin SDK 處理）
+    match /analysis_tasks/{taskId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // 預設拒絕所有其他集合的前端存取
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

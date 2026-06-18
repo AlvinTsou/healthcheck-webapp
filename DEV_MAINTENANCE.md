@@ -181,9 +181,11 @@
 本專案採用 **Firebase Firestore** 作為非同步任務狀態追踪與即時同步的儲存庫。
 * **API 啟用**：必須在 GCP 專案中啟用 `firestore.googleapis.com` API。
 * **資料庫模式**：需於專案中建立一個預設資料庫 `(default)`，且其模式必須為 **FIRESTORE_NATIVE (Native 模式)**，區域建議選擇 `asia-east1`。
+* **安全性規則配置 (Security Rules)**：因為前端是匿名使用者且需要透過 `onSnapshot` 訂閱任務進度，您必須在 Firebase 控制台的 Firestore Database -> **Rules (規則)** 頁面中，設定允許公眾讀取但禁止寫入的安全性規則（寫入一律由後端 Admin SDK 處理）。請直接將專案根目錄的 `firestore.rules` 內容貼入並發佈。
 * **服務帳戶權限**：VM 的服務帳戶或是 `/app/gcp-key.json` 對應的服務帳戶（例如 `healthcheck-app`）必須在 GCP 控制台的 **IAM & Admin** 中被授予 **`Cloud Datastore User`** (或更高如 `Cloud Datastore Owner`) 以及 **`Firebase Admin`** 角色。
 * **安全性與憑證初始化**：後端 `main.py` 會自動偵測 `GOOGLE_APPLICATION_CREDENTIALS` 環境變數。若金鑰檔案存在，會優先使用 `credentials.Certificate` 明確指定金鑰載入，避免在容器環境下因 API Access Scopes 限制而 fallback 導致 403 權限拒絕；若無設定則使用 GCP Application Default Credentials (ADC) 自動登入。
 * **前端 Web 連線設定**：需於本機與遠端的 `.env` 中加入 Firebase Web Client 設定。
+
 
 ### H. Firebase 自動清理與容量控制 (Auto-Cleanup & Capacity Truncation)
 
