@@ -260,13 +260,34 @@ async def analyze_health_report(
         
         prompt = f"請幫我分析這份健檢報告。使用者目前最想了解的問題是：{question}"
         
-        # Call Gemini model
-        logger.info(f"Calling Gemini model '{GEMINI_MODEL}' with grounding...")
-        response = ai_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=[user_report, prompt],
-            config=grounding_config
-        )
+        # Call Gemini model with 120s timeout limit using asyncio.wait_for and asyncio.to_thread
+        logger.info(f"Calling Gemini model '{GEMINI_MODEL}' with grounding (120s timeout)...")
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    ai_client.models.generate_content,
+                    model=GEMINI_MODEL,
+                    contents=[user_report, prompt],
+                    config=grounding_config
+                ),
+                timeout=120.0
+            )
+        except asyncio.TimeoutError:
+            logger.error("Gemini analysis request timed out (120 seconds).")
+            # 發生超時，退回額度
+            async with quota_lock:
+                quota_data = load_quota_store()
+                used = quota_data.get(code_clean, 1)
+                quota_data[code_clean] = max(0, used - 1)
+                save_quota_store(quota_data)
+            log_invite_code_usage(code_clean, file.filename, len(file_bytes), "failed", "Request Timed Out (120s)")
+            return JSONResponse(
+                status_code=504,
+                content={
+                    "success": False,
+                    "detail": "AI 顧問分析超時，請確認您的網路狀況或稍後再試。"
+                }
+            )
         
         # Extract response text and grounding metadata (citations)
         ai_response_text = response.text
