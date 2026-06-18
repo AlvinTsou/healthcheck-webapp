@@ -546,17 +546,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Security Modal Logic ---
     const securityEntranceBtn = document.getElementById('security-entrance-btn');
+    const securityBannerBtn = document.getElementById('security-banner-btn');
     const securityModal = document.getElementById('security-modal');
     const closeSecurityBtn = document.getElementById('close-security-btn');
 
-    if (securityEntranceBtn && securityModal && closeSecurityBtn) {
-        securityEntranceBtn.addEventListener('click', () => {
+    if (securityModal && closeSecurityBtn) {
+        const openSecurityModal = () => {
             securityModal.classList.remove('hidden');
-        });
+        };
 
         const closeSecurityModal = () => {
             securityModal.classList.add('hidden');
         };
+
+        if (securityEntranceBtn) {
+            securityEntranceBtn.addEventListener('click', openSecurityModal);
+        }
+        if (securityBannerBtn) {
+            securityBannerBtn.addEventListener('click', openSecurityModal);
+        }
 
         closeSecurityBtn.addEventListener('click', closeSecurityModal);
         securityModal.addEventListener('click', (e) => {
