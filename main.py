@@ -370,6 +370,39 @@ async def async_analyze_job(
         log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", str(e))
 
 
+# Helper function to delete documents older than 7 days in Firebase
+async def clean_old_firebase_tasks():
+    logger.info("Starting background Firebase Firestore cleanup check...")
+    try:
+        db = firestore.client()
+        # Calculate timezone-aware timestamp for 7 days ago
+        seven_days_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+        
+        # Query Firestore documents older than 7 days
+        query = db.collection("analysis_tasks").where("created_at", "<", seven_days_ago)
+        docs = query.stream()
+        
+        deleted_count = 0
+        batch = db.batch()
+        for doc in docs:
+            batch.delete(doc.reference)
+            deleted_count += 1
+            # Commit batch every 500 documents (Firestore limit)
+            if deleted_count % 500 == 0:
+                batch.commit()
+                batch = db.batch()
+        
+        if deleted_count % 500 != 0:
+            batch.commit()
+            
+        if deleted_count > 0:
+            logger.info(f"Firebase Cleanup: Successfully deleted {deleted_count} old task documents.")
+        else:
+            logger.info("Firebase Cleanup: No tasks older than 7 days found.")
+    except Exception as e:
+        logger.error(f"Failed to cleanup old Firebase tasks: {str(e)}")
+
+
 # Non-blocking analysis endpoint
 @app.post("/api/analyze")
 async def analyze_health_report(
@@ -456,6 +489,9 @@ async def analyze_health_report(
         invite_limit=invite_limit,
         remaining=remaining
     )
+
+    # Dispatch to background Firestore cleanup check
+    background_tasks.add_task(clean_old_firebase_tasks)
 
     # Immediately respond with task details for polling/real-time subscription
     return JSONResponse({
