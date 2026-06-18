@@ -543,4 +543,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 10000); // Poll every 10 seconds
     };
+
+    // --- Security Modal Logic ---
+    const securityEntranceBtn = document.getElementById('security-entrance-btn');
+    const securityModal = document.getElementById('security-modal');
+    const closeSecurityBtn = document.getElementById('close-security-btn');
+
+    if (securityEntranceBtn && securityModal && closeSecurityBtn) {
+        securityEntranceBtn.addEventListener('click', () => {
+            securityModal.classList.remove('hidden');
+        });
+
+        const closeSecurityModal = () => {
+            securityModal.classList.add('hidden');
+        };
+
+        closeSecurityBtn.addEventListener('click', closeSecurityModal);
+        securityModal.addEventListener('click', (e) => {
+            if (e.target === securityModal) {
+                closeSecurityModal();
+            }
+        });
+    }
 });
