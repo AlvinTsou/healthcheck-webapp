@@ -879,6 +879,173 @@ body {
     }
 }
 
+/* App Footer Entrance */
+.app-footer {
+    text-align: center;
+    margin-top: 40px;
+    margin-bottom: 20px;
+}
+
+.footer-link-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    opacity: 0.6;
+}
+
+.footer-link-btn:hover {
+    color: var(--primary);
+    text-shadow: 0 0 10px var(--primary-glow);
+    opacity: 1;
+}
+
+/* Modal Overlay (Glassmorphism Modal) */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(6, 7, 19, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.modal-overlay.hidden {
+    display: none !important;
+    opacity: 0;
+}
+
+/* Modal Card */
+.modal-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    overflow: hidden;
+    animation: modal-slide-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes modal-slide-in {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.close-modal-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.close-modal-btn:hover {
+    color: #ffffff;
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.admin-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Admin Dropzone */
+.admin-drop-zone {
+    border: 2px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 24px 16px;
+    text-align: center;
+    position: relative;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.01);
+    transition: all 0.3s ease;
+}
+
+.admin-drop-zone:hover, .admin-drop-zone.dragover {
+    border-color: var(--primary);
+    background: rgba(79, 172, 254, 0.03);
+}
+
+/* Sync Monitor Box */
+.sync-monitor {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 12px;
+}
+
+.monitor-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    transition: color 0.3s ease;
+}
+
+.step-item.active {
+    color: #00f2fe;
+    font-weight: 500;
+}
+
+.step-item.active .step-status-icon {
+    animation: spin-loading 2s infinite linear;
+    display: inline-block;
+}
+
+.step-item.success {
+    color: var(--success);
+}
+
+.step-item.failed {
+    color: var(--danger);
+}
+
+@keyframes spin-loading {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* --- Print Mode Styles for PDF Export --- */
 @media print {
     /* 1. 隱藏不必要的介面元素 */
@@ -893,7 +1060,9 @@ body {
     .result-actions,
     .status-badge,
     .citations-container,
-    .swipe-hint {
+    .swipe-hint,
+    .app-footer,
+    .modal-overlay {
         display: none !important;
     }
     

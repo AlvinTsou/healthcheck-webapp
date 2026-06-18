@@ -89,11 +89,14 @@
 既然您已經在 GCP 上建立了 VM 執行個體 `hrv001`（可用區 `asia-east1-c`，外部 IP `35.236.168.126`），您可以直接在該 VM 上部署 WebApp，並利用 GCP 的 **IAM 服務帳戶 (Service Account)** 進行無金鑰身分驗證。
 
 ### 1. 設定 VM 的 Service Account 權限
-為了讓 VM 內的程式能存取 Vertex AI Search Data Store，您需要授予該 VM 關聯的服務帳戶適當的讀取權限：
+為了讓 VM 內的後端程式能安全且自動地將新文件上傳至 Cloud Storage (GCS) 並同步觸發 Vertex AI Search 資料庫更新，您需要授予該 VM 關聯的服務帳戶適當的 IAM 權限：
 1. 進入 [GCP 控制台的 IAM 頁面](https://console.cloud.google.com/iam-admin/iam)。
 2. 尋找與您 VM `hrv001` 關聯的服務帳戶（預設通常為 `Compute Engine default service account`，格式為 `[專案編號]-compute@developer.gserviceaccount.com`）。
 3. 點選該服務帳戶右側的 **編輯 (Edit)** 圖示。
-4. 點選 **新增其他角色 (Add Another Role)**，搜尋並新增 **`Discovery Engine Viewer` (Discovery Engine 檢視者)** 角色。
+4. 點選 **新增其他角色 (Add Another Role)**，分別搜尋並新增以下三個角色：
+   * **`Discovery Engine Viewer` (Discovery Engine 檢視者)**：允許後端向 Data Store 發起 Grounding 檢索與回答。
+   * **`Discovery Engine Editor` (Discovery Engine 編輯者)**：允許網頁管理員透過 API 觸發 Data Store 進行文件重新解析與同步。
+   * **`Storage Object Creator` (儲存庫物件建立者)**：允許網頁管理員透過 API 將新的手冊 PDF 檔案直接上傳寫入 GCS 儲存桶。
 5. 點選 **儲存 (Save)**。
 *提示：使用服務帳戶驗證是 GCP 的安全最佳實踐。您不需要在 VM 上執行 `gcloud auth application-default login`，也不需要上傳任何 `.json` 金鑰檔案，GCP SDK 便會自動載入此服務帳戶權限！*
 

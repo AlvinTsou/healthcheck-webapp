@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
+from google.cloud import storage
+from google.cloud import discoveryengine_v1beta as discoveryengine
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -40,6 +43,7 @@ if gcp_key_json:
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 GCP_LOCATION = os.getenv("GCP_LOCATION", "global")
 GCP_DATASTORE_ID = os.getenv("GCP_DATASTORE_ID")
+GCP_BUCKET_NAME = os.getenv("GCP_BUCKET_NAME")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 
 import json
@@ -354,6 +358,111 @@ async def reset_quota(
                 status_code=500,
                 detail=f"重置失敗：{str(e)}"
             )
+
+# Admin Upload and Sync handbook to RAG
+@app.post("/api/admin/upload-handbook")
+async def upload_handbook_and_sync(
+    file: UploadFile = File(...),
+    token: str = Form(...)
+):
+    if token != ADMIN_TOKEN:
+        await asyncio.sleep(1.0)  # 防暴破
+        raise HTTPException(
+            status_code=403,
+            detail="管理憑證 Token 無效。"
+        )
+        
+    if not GCP_BUCKET_NAME or not GCP_DATASTORE_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="GCP_BUCKET_NAME 或 GCP_DATASTORE_ID 未於環境變數配置。"
+        )
+        
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="目前僅支援上傳 PDF 格式的健檢對照手冊。"
+        )
+        
+    try:
+        file_bytes = await file.read()
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(GCP_BUCKET_NAME)
+        blob = bucket.blob(file.filename)
+        blob.upload_from_string(file_bytes, content_type="application/pdf")
+        gcs_uri = f"gs://{GCP_BUCKET_NAME}/{file.filename}"
+        logger.info(f"Admin uploaded file {file.filename} to GCS: {gcs_uri}")
+    except Exception as e:
+        logger.error(f"Admin failed GCS upload: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"上傳至 Google Cloud Storage 失敗：{str(e)}"
+        )
+        
+    try:
+        client = discoveryengine.DocumentServiceClient()
+        parent = client.data_store_path(
+            project=GCP_PROJECT_ID,
+            location=GCP_LOCATION,
+            data_store=GCP_DATASTORE_ID
+        )
+        gcs_source = discoveryengine.GcsSource(
+            input_uris=[gcs_uri]
+        )
+        request = discoveryengine.ImportDocumentsRequest(
+            parent=parent,
+            gcs_source=gcs_source,
+        )
+        operation = client.import_documents(request=request)
+        logger.info(f"Successfully triggered Vertex AI Search import. Operation: {operation.operation.name}")
+        
+        return JSONResponse({
+            "success": True,
+            "gcs_uri": gcs_uri,
+            "operation_name": operation.operation.name
+        })
+    except Exception as e:
+        logger.error(f"Admin failed to trigger Discovery Engine import: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"上傳成功，但觸發 Vertex AI Search 同步失敗。錯誤詳情：{str(e)}"
+        )
+
+# Query Vertex AI Search Import Operation Status
+@app.get("/api/admin/operation-status")
+async def get_import_operation_status(
+    operation_name: str,
+    token: str
+):
+    if token != ADMIN_TOKEN:
+        await asyncio.sleep(1.0)
+        raise HTTPException(
+            status_code=403,
+            detail="管理憑證 Token 無效。"
+        )
+        
+    try:
+        client = discoveryengine.DocumentServiceClient()
+        op = client.api_client.transport.operations_client.get_operation(
+            name=operation_name
+        )
+        
+        error_msg = None
+        if op.HasField("error"):
+            error_msg = op.error.message
+            
+        return JSONResponse({
+            "success": True,
+            "done": op.done,
+            "error": error_msg
+        })
+    except Exception as e:
+        logger.error(f"Failed to get import operation status: {str(e)}")
+        return JSONResponse({
+            "success": False,
+            "done": False,
+            "error": str(e)
+        })
 
 # Serve Frontend static assets
 # Place this at the end to avoid routing conflicts

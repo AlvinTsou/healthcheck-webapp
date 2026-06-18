@@ -157,6 +157,72 @@
                 </div>
             </section>
         </main>
+        
+        <!-- App Footer -->
+        <footer class="app-footer">
+            <button type="button" id="admin-entrance-btn" class="footer-link-btn">⚙️ 系統知識庫管理</button>
+        </footer>
+    </div>
+    
+    <!-- Admin Management Modal -->
+    <div id="admin-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>⚙️ 系統知識庫管理</h3>
+                <button type="button" id="close-admin-btn" class="close-modal-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="admin-upload-form" class="admin-form">
+                    <!-- Token Input -->
+                    <div class="form-group">
+                        <label for="admin-token-input">管理憑證 Token</label>
+                        <input type="password" id="admin-token-input" placeholder="請輸入管理憑證 Token (ADMIN_TOKEN)" required autocomplete="off" style="width: 100%; padding: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #fff; font-family: inherit; font-size: 0.95rem; outline: none; transition: all 0.3s;">
+                    </div>
+                    
+                    <!-- Handbook PDF Dropzone -->
+                    <div class="form-group">
+                        <label>選取健檢手冊 PDF 檔案</label>
+                        <div id="admin-drop-zone" class="admin-drop-zone">
+                            <input type="file" id="admin-file-input" name="file" accept="application/pdf" class="file-input">
+                            <div id="admin-drop-zone-content" class="admin-drop-zone-content">
+                                <svg class="upload-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19ZM16 12H8V14H16V12ZM16 8H8V10H16V8ZM13 16H8V18H13V16Z" fill="currentColor"/>
+                                </svg>
+                                <p class="admin-main-prompt" style="font-weight:500; color:#fff; font-size:0.95rem; margin-top:8px;">拖曳新版手冊 PDF 至此處</p>
+                                <p class="admin-sub-prompt" style="font-size:0.85rem; color:rgba(255,255,255,0.5);">或點擊此區域瀏覽檔案</p>
+                                <p class="supported-files" style="font-size:0.75rem; color:rgba(255,255,255,0.3); margin-top:4px;">僅支援 PDF 格式 (最大 100MB)</p>
+                            </div>
+                            <div id="admin-preview-container" class="preview-container hidden">
+                                <!-- Preview PDF dynamically created -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress and Polling Monitor -->
+                    <div id="sync-monitor" class="sync-monitor hidden">
+                        <div class="monitor-steps">
+                            <div class="step-item" id="step-upload">
+                                <span class="step-status-icon">⏳</span>
+                                <span class="step-text">上傳 PDF 檔案至 GCS 儲存桶...</span>
+                            </div>
+                            <div class="step-item" id="step-trigger">
+                                <span class="step-status-icon">⏳</span>
+                                <span class="step-text">觸發 Vertex AI Search 資料更新...</span>
+                            </div>
+                            <div class="step-item" id="step-sync">
+                                <span class="step-status-icon">⏳</span>
+                                <span class="step-text">知識庫重新解析與向量化 (預計 5-15 分鐘)...</span>
+                                <div class="polling-info" id="polling-info" style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.4); margin-left: 24px; margin-top: 4px; font-family: monospace;">Operation: --</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" id="admin-submit-btn" class="submit-btn" disabled style="width:100%; margin-top:12px;">
+                        <span>開始上傳與同步知識庫</span>
+                    </button>
+                </form>
+            </div>
+        </div>
     </div>
     
     <script src="app.js"></script>
