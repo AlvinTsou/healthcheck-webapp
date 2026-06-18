@@ -18,5 +18,11 @@ cloudflare.key
 quota_store.json
 usage_log.jsonl
 *.jsonl
+# Archives
+*.tar.gz
+
+# Local testing scripts
+loadtest.go
+load_test.py
 
 
