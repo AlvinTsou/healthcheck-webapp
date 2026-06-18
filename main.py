@@ -260,9 +260,10 @@ async def async_analyze_job(
             "（在此處正面解答使用者最關心的諮詢問題。）\n\n"
             "請注意：\n"
             "1. 你的回答必須緊密基於知識庫事實，提供醫學數據的衛教解釋與日常健康管理建議。\n"
-            "2. 你的回答末尾務必加上以下免責聲明：\n"
+            "2. 你的回答中絕對不能包含『專業醫學依據來源』或『醫學依據來源』這類參考來源說明標題，也絕對不能列出或提及任何以 『gs://』 開頭的 Google Cloud Storage 檔案路徑與連結。\n"
+            "3. 你的回答末尾務必加上以下免責聲明：\n"
             "   『【免責聲明】本分析僅供個人健康管理參考，不具備醫療診斷效力。若您的數據異常或有身體不適，請務必諮詢專業醫師進行診斷與治療。』\n"
-            "3. 如果相關標準或答案在知識庫中完全找不到，請禮貌地告知使用者，並引導使用者諮詢醫生，不要盲目猜測或虛構數據。"
+            "4. 如果相關標準或答案在知識庫中完全找不到，請禮貌地告知使用者，並引導使用者諮詢醫生，不要盲目猜測或虛構數據。"
         )
         
         # Define Grounding Tool
@@ -311,6 +312,12 @@ async def async_analyze_job(
 
         # Extract response text and grounding metadata (citations)
         ai_response_text = response.text
+        
+        # Clean up unwanted medical source references and gs:// links in the text
+        import re
+        ai_response_text = re.sub(r'\[?專業醫學依據來源\]?：?\s*', '', ai_response_text)
+        ai_response_text = re.sub(r'gs://[a-zA-Z0-9\-_./]+', '', ai_response_text)
+
         citations = []
         
         # Extract citation metadata from grounding response
@@ -875,6 +882,12 @@ async def get_research_statistics(
             "error": str(e)
         })
 
+# Admin Dashboard Panel route
+@app.get("/kb-portal")
+async def serve_admin_panel():
+    return FileResponse("static/admin.html")
+
 # Serve Frontend static assets
 # Place this at the end to avoid routing conflicts
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
+

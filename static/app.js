@@ -50,8 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultLoading = document.getElementById('result-loading');
     const resultSuccess = document.getElementById('result-success');
     const reportBody = document.getElementById('report-body');
-    const citationsArea = document.getElementById('citations-area');
-    const citationsList = document.getElementById('citations-list');
     
     // Action Bar Buttons
     const copyReportBtn = document.getElementById('copy-report-btn');
@@ -334,27 +332,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         reportBody.appendChild(card);
                     });
 
-                    // Render Citations
-                    if (taskData.citations && taskData.citations.length > 0) {
-                        citationsArea.classList.remove('hidden');
-                        citationsList.innerHTML = '';
-                        taskData.citations.forEach(cit => {
-                            const badge = document.createElement('a');
-                            badge.className = 'citation-badge';
-                            badge.href = cit.uri;
-                            badge.target = '_blank';
-                            badge.rel = 'noopener noreferrer';
-                            badge.innerHTML = `
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 4px;">
-                                    <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM18 20H6V4H13V9H18V20Z" fill="currentColor"/>
-                                </svg>${cit.title}
-                            `;
-                            citationsList.appendChild(badge);
-                        });
-                    } else {
-                        citationsArea.classList.add('hidden');
-                    }
-
                     restoreFormUI();
 
                 } else if (taskData.status === 'failed') {
@@ -403,6 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Admin Modal Logic ---
     const adminEntranceBtn = document.getElementById('admin-entrance-btn');
+    if (adminEntranceBtn) {
     const adminModal = document.getElementById('admin-modal');
     const closeAdminBtn = document.getElementById('close-admin-btn');
     const adminUploadForm = document.getElementById('admin-upload-form');
@@ -759,6 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 10000); // Poll every 10 seconds
     };
+    }
 
     // --- Security Modal Logic ---
     const securityEntranceBtn = document.getElementById('security-entrance-btn');

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚙️ 系統知識庫管理與研究數據</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        .admin-page-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .admin-title-area {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .back-home-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .back-home-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="background-decor">
+        <div class="blob-top-left"></div>
+        <div class="blob-bottom-right"></div>
+    </div>
+    
+    <div class="admin-page-container">
+        <div class="admin-title-area">
+            <h2 style="margin: 0; font-size: 1.8rem; font-weight: 700; color: #fff; text-shadow: 0 4px 12px rgba(0,0,0,0.2);">⚙️ 系統知識庫管理</h2>
+            <a href="/" class="back-home-btn">返回首頁</a>
+        </div>
+        
+        <div class="glass-card" style="padding: 24px; border-radius: 16px;">
+            <!-- Modal Tabs -->
+            <div class="modal-tabs" style="display: flex; gap: 12px; margin-bottom: 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 8px;">
+                <button type="button" id="tab-kb" class="tab-btn active" style="background: none; border: none; color: #fff; font-size: 0.95rem; font-weight: 500; cursor: pointer; padding: 6px 12px; border-bottom: 2px solid #3b82f6; transition: all 0.3s; outline: none;">📚 知識庫管理</button>
+                <button type="button" id="tab-research" class="tab-btn" style="background: none; border: none; color: rgba(255, 255, 255, 0.6); font-size: 0.95rem; font-weight: 500; cursor: pointer; padding: 6px 12px; border-bottom: 2px solid transparent; transition: all 0.3s; outline: none;">📊 研究數據與驗證</button>
+            </div>
+
+            <!-- Tab Content: Knowledge Base -->
+            <div id="tab-content-kb" class="tab-content">
+                <form id="admin-upload-form" class="admin-form">
+                    <!-- Token Input -->
+                    <div class="form-group">
+                        <label for="admin-token-input">管理憑證 Token</label>
+                        <input type="password" id="admin-token-input" placeholder="請輸入管理憑證 Token (ADMIN_TOKEN)" required autocomplete="off" style="width: 100%; padding: 12px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #fff; font-family: inherit; font-size: 0.95rem; outline: none; transition: all 0.3s;">
+                    </div>
+                    
+                    <!-- Handbook PDF Dropzone -->
+                    <div class="form-group" style="margin-top: 20px;">
+                        <label>選取健檢手冊 PDF 檔案</label>
+                        <div id="admin-drop-zone" class="admin-drop-zone">
+                            <input type="file" id="admin-file-input" name="file" accept="application/pdf" class="file-input">
+                            <div id="admin-drop-zone-content" class="admin-drop-zone-content">
+                                <svg class="upload-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM19 19H5V5H19V19ZM16 12H8V14H16V12ZM16 8H8V10H16V8ZM13 16H8V18H13V16Z" fill="currentColor"/>
+                                </svg>
+                                <p class="admin-main-prompt" style="font-weight:500; color:#fff; font-size:0.95rem; margin-top:8px;">拖曳新版手冊 PDF 至此處</p>
+                                <p class="admin-sub-prompt" style="font-size:0.85rem; color:rgba(255,255,255,0.5);">或點擊此區域瀏覽檔案</p>
+                                <p class="supported-files" style="font-size:0.75rem; color:rgba(255,255,255,0.3); margin-top:4px;">僅支援 PDF 格式 (最大 100MB)</p>
+                            </div>
+                            <div id="admin-preview-container" class="preview-container hidden">
+                                <!-- Preview PDF dynamically created -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress and Polling Monitor -->
+                    <div id="sync-monitor" class="sync-monitor hidden">
+                        <div class="monitor-steps">
+                            <div class="step-item" id="step-upload">
+                                <span class="step-status-icon">⏳</span>
+                                <span class="step-text">上傳 PDF 檔案至 GCS 儲存桶...</span>
+                            </div>
+                            <div class="step-item" id="step-trigger">
+                                <span class="step-status-icon">⏳</span>
+                                <span class="step-text">觸發 Vertex AI Search 資料更新...</span>
+                            </div>
+                            <div class="step-item" id="step-sync">
+                                <span class="step-status-icon">⏳</span>
+                                <span class="step-text">知識庫重新解析與向量化 (預計 5-15 分鐘)...</span>
+                                <div class="polling-info" id="polling-info" style="font-size: 0.8rem; color: rgba(255, 255, 255, 0.4); margin-left: 24px; margin-top: 4px; font-family: monospace;">Operation: --</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" id="admin-submit-btn" class="submit-btn" disabled style="width:100%; margin-top:12px;">
+                        <span>開始上傳與同步知識庫</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Tab Content: Research & Stats -->
+            <div id="tab-content-research" class="tab-content hidden" style="color: #fff; font-size: 0.9rem;">
+                <!-- Factual Accuracy Score Panel -->
+                <div class="stats-panel-card" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <span style="font-weight: 500; color: rgba(255,255,255,0.7);">RAG 臨床分析正確率評估</span>
+                        <span id="accuracy-percentage" style="font-size: 1.5rem; font-weight: 700; color: #10b981;">100.0%</span>
+                    </div>
+                    <div style="width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; overflow: hidden; margin-bottom: 8px;">
+                        <div id="accuracy-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #ef4444 0%, #f59e0b 50%, #10b981 100%); border-radius: 5px; transition: width 0.8s ease-in-out;"></div>
+                    </div>
+                    <p style="font-size: 0.75rem; color: rgba(255,255,255,0.4); margin: 0;">此數據基於近 30 次分析任務中，Gemini 審查員自我驗證所產生之正確率分數平均值。</p>
+                </div>
+
+                <!-- Academic Research Hot Keywords Statistics -->
+                <h4 style="margin: 16px 0 8px 0; font-size: 0.95rem; font-weight: 600; color: rgba(255,255,255,0.85);">📊 健康諮詢與報告核心關鍵字統計</h4>
+                <div id="keyword-list-container" class="keyword-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; padding-right: 4px; margin-bottom: 16px;">
+                    <!-- Keyword lists rendered dynamically -->
+                    <div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.4);">請先在知識庫管理頁籤中輸入管理憑證 Token 以獲取研究數據。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/admin.js"></script>
+</body>
+</html>
