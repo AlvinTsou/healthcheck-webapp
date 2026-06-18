@@ -72,12 +72,22 @@
 3. 存檔後 FastAPI 會自動偵測並套用新模型。
 
 ### B. 更新《健檢報告完全手冊》知識庫
-當醫學對照標準有更新，或是有新的健檢解讀文件需要匯入時：
+當醫學對照標準有更新，或是有新的健檢解讀文件需要匯入時，您可以使用以下兩種方式之一進行更新：
+
+#### 方法一：網頁管理端一鍵同步（推薦，最方便）
+1. 開啟 WebApp 首頁，滑動到最下方點選 **「⚙️ 系統知識庫管理」**。
+2. 輸入在系統環境變數中設定的 **管理憑證 Token** (`ADMIN_TOKEN`)。
+3. 將新版的對照手冊 PDF 檔案拖曳至上傳區域，或點擊該區域選擇檔案。
+4. 點擊 **「上傳並開始同步」** 按鈕。
+5. 系統會自動將 PDF 上傳至 Cloud Storage，並呼叫 API 觸發 Vertex AI Search 進行數據導入，前端會即時顯示 Operation 同步進度（這需要 5 ~ 10 分鐘）。更新完成後，API 會自動套用最新手冊，無需重啟服務。
+
+#### 方法二：登入 GCP Console 手動導入（備用）
 1. 登入 **GCP Console**，前往您的 **Cloud Storage (GCS)**。
-2. 進入對應的 Bucket（例如 `gs://healthcheck-handbook-xxx/`），上傳新的圖片或 PDF 文件。
+2. 進入對應的 Bucket（例如 `gs://healthcheck-handbook-xxx/`），上傳新的 PDF 文件。
 3. 前往 **Agent Builder** 控制台，選擇您的 Data Store (`healthcheck-handbook-ds`)。
-4. 點選 **Data** 分頁，選擇 **Import** 匯入新文件，讓系統對新文件進行 OCR 解析與索引建立（可能需要 5 ~ 10 分鐘）。
-5. 匯入完成後，WebApp API 會自動檢索到最新的手冊內容，無需重新部署後端代碼。
+4. 點選 **Data** 分頁，選擇 **Import** 匯入新上傳的文件，讓系統對文件進行 OCR 解析與索引建立（可能需要 5 ~ 10 分鐘）。
+5. 導入完成後，WebApp API 即會檢索到最新的手冊內容。
+
 
 ### C. 憑證與認證過期維護
 當系統存取 Vertex AI 拋出 `DefaultCredentialsError` 或是 403 權限不足錯誤時，請依環境確認以下設定：
@@ -159,9 +169,60 @@
    nano ~/healthcheck-webapp/.env
    ```
 2. 修改對應變數：
-   * `INVITATION_CODES`：以英文逗號分隔（如 `PAPAGO2026,VIP888,NEWYEAR`）。
-   * `MAX_QUOTA`：每組邀請碼的最高配額使用次數（如 `100`）。
+   * `INVITATION_CODES`：以英文逗號分隔。支援使用 `CODE:LIMIT` 格式為特定代碼自訂最高額度上限（例如 `PAPAGO2026:100,VIP888:500,NEWYEAR:50`）。若未指定 `:LIMIT` 則預設套用 `MAX_QUOTA` 設定之數值。
+   * `MAX_QUOTA`：每組未指定自訂上限之邀請碼的預設最高配額使用次數（例如 `50`）。
 3. 存檔後重啟 Docker 容器以套用新配置：
    ```bash
    docker-compose down && docker-compose up -d --build
    ```
+
+### G. Firebase Firestore 異步整合與 API/IAM 權限
+
+本專案採用 **Firebase Firestore** 作為非同步任務狀態追踪與即時同步的儲存庫。
+* **API 啟用**：必須在 GCP 專案中啟用 `firestore.googleapis.com` API。
+* **資料庫模式**：需於專案中建立一個預設資料庫 `(default)`，且其模式必須為 **FIRESTORE_NATIVE (Native 模式)**，區域建議選擇 `asia-east1`。
+* **服務帳戶權限**：VM 的服務帳戶或是 `/app/gcp-key.json` 對應的服務帳戶（例如 `healthcheck-app`）必須在 GCP 控制台的 **IAM & Admin** 中被授予 **`Cloud Datastore User`** (或更高如 `Cloud Datastore Owner`) 以及 **`Firebase Admin`** 角色。
+* **安全性與憑證初始化**：後端 `main.py` 會自動偵測 `GOOGLE_APPLICATION_CREDENTIALS` 環境變數。若金鑰檔案存在，會優先使用 `credentials.Certificate` 明確指定金鑰載入，避免在容器環境下因 API Access Scopes 限制而 fallback 導致 403 權限拒絕；若無設定則使用 GCP Application Default Credentials (ADC) 自動登入。
+* **前端 Web 連線設定**：需於本機與遠端的 `.env` 中加入 Firebase Web Client 設定。
+
+### H. Firebase 自動清理與容量控制 (Auto-Cleanup & Capacity Truncation)
+
+為了確保 Firestore 的總儲存量不會超出免費額度限制 (1 GB)，且防止大量請求在背景短時間內重複觸發清理導致 API 額度浪費，系統在每次背景發起分析時，會異步執行 `clean_old_firebase_tasks` 任務，執行雙重清理策略：
+1. **時間過期清理**：自動刪除 7 天前創建的任務文件（以 `created_at` timestamp 進行比對）。
+2. **容量控制清理**：系統會透過 `count()` 查詢總任務數量。若大於設定的 `FIREBASE_MAX_TASKS_LIMIT`（預設值為 `3000` 筆），則會按時間順序自動刪除最舊的超量文件。
+* **防開銷浪費頻率鎖 (Rate Limiting)**：引進 `cleanup_lock` 鎖與 10 分鐘（`600s`）的時間間隔保護，限制在極短時間內不會重複向 Firestore 觸發清理請求，節省 API 讀寫計費。
+* **調整任務上限**：可於 `.env` 中加入選用變數調整保留數（建議 1000 ~ 5000）：
+  ```env
+  FIREBASE_MAX_TASKS_LIMIT=3000
+  ```
+
+### I. 臨床分析驗證、數值結構化紀錄與研究關鍵字統計
+
+本系統在每次背景分析成功後，會自動執行以下研究與驗證流程：
+1. **臨床分析正確性自我驗證 (Self-Verification)**：
+   * 後端在背景自動調用獨立的評估 AI（`gemini-2.5-flash`），針對生成的分析報告進行邏輯審查，評估是否符合醫學標準，計算出 `accuracy_score`（0-100）與簡短評估理由，並存入任務中的 `verification` 物件。這在學術與系統監控中可用作「幻覺率/正確率」的統計指標。
+2. **指標數值結構化紀錄 (Metrics Extraction)**：
+   * 透過 Structured JSON 輸出，自動從生成報告中提取具體的項目、檢測值、單位及判定狀態，結構化存入任務中的 `extracted_metrics` 欄位。這可用於後續統計使用者的健康指標趨勢。
+3. **關鍵字提及頻率累計 (Keyword Tracking)**：
+   * 後端定義了 16 個核心健康研究關鍵字（如三酸甘油脂、血糖、脂肪肝等），統計使用者提問與 AI 回覆中該詞彙的頻率，並利用 **Firestore Increment 原子操作** 累加更新至 `research_statistics/keywords` 全局文檔。
+4. **查詢統計 API**：
+   * 管理端可發送 GET 請求到 `/api/admin/research-stats?token=您的ADMIN_TOKEN` 查詢這些數據，後端會在 Python 記憶體中進行篩選與統計，完全避開了手動在 Firestore 中建立複合索引 (Composite Index) 的限制，上線即可直接運作。
+5. **數據展示**：
+   * 管理員 Modal 頁面提供「📊 研究數據與驗證」分頁 Tab，可動態展示平均正確率百分比、HSL 漸層進度條與研究關鍵字排行榜。
+
+### J. 網址連結自動填入邀請碼 (UX)
+* 前端 `app.js` 支援解析網址 Query 參數。
+* 支援使用 `?code=XXX` 與 `?invite=XXX`（例如 `https://domain/?code=PAPAGO2026`）。
+* 網頁載入時若發現參數，會自動填入邀請碼輸入框並觸發按鈕啟用狀態，免去手動輸入的麻煩。
+
+### K. 無伺服器/容器部署之 GCP 憑證整合 (Serverless & Container Deployments)
+當應用程式部署於 **Zeabur**、**Render**、**Cloud Run** 等無伺服器託管平台時，由於其不方便掛載 `/app/gcp-key.json` 實體金鑰檔案，系統額外提供了動態憑證解析機制：
+1. **設定環境變數**：在託管平台控制台新增環境變數 `GCP_KEY_JSON`。
+2. **傳入格式**：
+   * **原始 JSON 格式**：將您的 GCP Service Account 金鑰 JSON 檔案內容直接貼入環境變數中。
+   * **Base64 編碼格式**：如果平台對換行或特殊字元有敏感限制，您可以先在本地將金鑰 JSON 檔案轉換為 Base64 字串，再貼入 `GCP_KEY_JSON`。
+3. **運作原理**：後端啟動時，若偵測到 `GCP_KEY_JSON` 環境變數：
+   * 會自動判斷是否為 Base64，如果是則會自動解碼。
+   * 將解碼後的 JSON 金鑰動態寫入容器內的 `/tmp/gcp-key.json`。
+   * 自動將系統 `GOOGLE_APPLICATION_CREDENTIALS` 環境變數指向該路徑，完成 Firebase 與 Vertex AI SDK 的無縫驗證。
+
