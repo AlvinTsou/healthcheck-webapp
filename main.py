@@ -49,13 +49,29 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 import json
 import asyncio
 
-# MVP Invitation Quota System Config
-INVITATION_CODES_RAW = os.getenv("INVITATION_CODES", "")
-INVITATION_CODES = {code.strip().upper() for code in INVITATION_CODES_RAW.split(",") if code.strip()}
 try:
     MAX_QUOTA = int(os.getenv("MAX_QUOTA", "50"))
 except ValueError:
     MAX_QUOTA = 50
+
+# MVP Invitation Quota System Config - Support "CODE:LIMIT" format
+INVITATION_CODES_RAW = os.getenv("INVITATION_CODES", "")
+INVITATION_LIMITS = {}  # mapping: CODE -> LIMIT
+for item in INVITATION_CODES_RAW.split(","):
+    item = item.strip()
+    if not item:
+        continue
+    parts = item.split(":")
+    code = parts[0].strip().upper()
+    if len(parts) > 1:
+        try:
+            limit = int(parts[1].strip())
+        except ValueError:
+            limit = MAX_QUOTA
+    else:
+        limit = MAX_QUOTA
+    INVITATION_LIMITS[code] = limit
+
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "papago-reset-secret-2026")
 
 QUOTA_STORE_PATH = "quota_store.json"
@@ -169,7 +185,7 @@ async def analyze_health_report(
         
     # 邀請碼驗證與防暴破
     code_clean = invite_code.strip().upper() if invite_code else ""
-    if code_clean not in INVITATION_CODES:
+    if code_clean not in INVITATION_LIMITS:
         await asyncio.sleep(1.0)  # 延遲防刷
         log_invite_code_usage(code_clean, file.filename, 0, "invalid_code")
         raise HTTPException(
@@ -177,10 +193,11 @@ async def analyze_health_report(
             detail="邀請碼無效，請聯繫管理員。"
         )
         
+    invite_limit = INVITATION_LIMITS[code_clean]
     async with quota_lock:
         quota_data = load_quota_store()
         used = quota_data.get(code_clean, 0)
-        if used >= MAX_QUOTA:
+        if used >= invite_limit:
             log_invite_code_usage(code_clean, file.filename, 0, "quota_exhausted")
             raise HTTPException(
                 status_code=403,
@@ -189,7 +206,7 @@ async def analyze_health_report(
         # 先扣減額度以防併發超用
         quota_data[code_clean] = used + 1
         save_quota_store(quota_data)
-        remaining = MAX_QUOTA - (used + 1)
+        remaining = invite_limit - (used + 1)
         
     try:
         # Read the uploaded file bytes
