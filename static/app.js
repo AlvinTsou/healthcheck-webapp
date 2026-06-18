@@ -404,6 +404,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminSubmitBtn = document.getElementById('admin-submit-btn');
     const pollingInfo = document.getElementById('polling-info');
     
+    // Tabs Elements
+    const tabKb = document.getElementById('tab-kb');
+    const tabResearch = document.getElementById('tab-research');
+    const tabContentKb = document.getElementById('tab-content-kb');
+    const tabContentResearch = document.getElementById('tab-content-research');
+    const accuracyPercentage = document.getElementById('accuracy-percentage');
+    const accuracyBar = document.getElementById('accuracy-bar');
+    const keywordListContainer = document.getElementById('keyword-list-container');
+    
     const stepUpload = document.getElementById('step-upload');
     const stepTrigger = document.getElementById('step-trigger');
     const stepSync = document.getElementById('step-sync');
@@ -442,6 +451,105 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         resetSteps();
         checkAdminFormValidity();
+        switchTab('kb'); // 切換回預設 Tab
+    };
+
+    // Tab switching logic
+    const switchTab = (tab) => {
+        if (tab === 'kb') {
+            tabKb.classList.add('active');
+            tabKb.style.color = '#fff';
+            tabKb.style.borderBottomColor = '#3b82f6';
+            
+            tabResearch.classList.remove('active');
+            tabResearch.style.color = 'rgba(255, 255, 255, 0.6)';
+            tabResearch.style.borderBottomColor = 'transparent';
+            
+            tabContentKb.classList.remove('hidden');
+            tabContentResearch.classList.add('hidden');
+        } else if (tab === 'research') {
+            tabResearch.classList.add('active');
+            tabResearch.style.color = '#fff';
+            tabResearch.style.borderBottomColor = '#3b82f6';
+            
+            tabKb.classList.remove('active');
+            tabKb.style.color = 'rgba(255, 255, 255, 0.6)';
+            tabKb.style.borderBottomColor = 'transparent';
+            
+            tabContentResearch.classList.remove('hidden');
+            tabContentKb.classList.add('hidden');
+            
+            loadResearchStats(); // 載入統計數據
+        }
+    };
+
+    tabKb.addEventListener('click', () => switchTab('kb'));
+    tabResearch.addEventListener('click', () => switchTab('research'));
+
+    // Load research statistics from API
+    const loadResearchStats = async () => {
+        const token = adminTokenInput.value.trim();
+        if (!token) {
+            keywordListContainer.innerHTML = `<div style="text-align: center; color: rgba(255,255,255,0.4); padding: 20px 0;">請先在「知識庫管理」頁面輸入管理憑證 Token</div>`;
+            accuracyPercentage.textContent = '--%';
+            accuracyBar.style.width = '0%';
+            return;
+        }
+        
+        keywordListContainer.innerHTML = `<div style="text-align: center; color: rgba(255,255,255,0.4); padding: 20px 0;">載入統計數據中...</div>`;
+        
+        try {
+            const response = await fetch(`/api/admin/research-stats?token=${encodeURIComponent(token)}`);
+            const data = await response.json();
+            
+            if (!data.success) {
+                keywordListContainer.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 20px 0;">載入失敗：${data.error || '未知錯誤'}</div>`;
+                accuracyPercentage.textContent = '--%';
+                accuracyBar.style.width = '0%';
+                return;
+            }
+            
+            // 1. Render Accuracy Percentage
+            const acc = data.average_accuracy;
+            accuracyPercentage.textContent = `${acc}%`;
+            accuracyBar.style.width = `${acc}%`;
+            if (acc >= 90) {
+                accuracyPercentage.style.color = '#10b981';
+            } else if (acc >= 75) {
+                accuracyPercentage.style.color = '#f59e0b';
+            } else {
+                accuracyPercentage.style.color = '#ef4444';
+            }
+            
+            // 2. Render Keywords Chart
+            const kws = data.keyword_stats;
+            if (!kws || kws.length === 0) {
+                keywordListContainer.innerHTML = `<div style="text-align: center; color: rgba(255,255,255,0.4); padding: 20px 0;">尚無關鍵字統計研究數據</div>`;
+                return;
+            }
+            
+            const maxCount = Math.max(...kws.map(k => k.count), 1);
+            
+            let html = '';
+            kws.forEach(k => {
+                const percentage = (k.count / maxCount) * 100;
+                html += `
+                    <div style="margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.02); padding-bottom: 8px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.85rem;">
+                            <span style="font-weight:500;">${k.keyword} <span style="color:#3b82f6;">(${k.count}次)</span></span>
+                            <span style="color:rgba(255,255,255,0.45); font-size:0.75rem;">提問: ${k.question_count}次 | 報告: ${k.report_count}次</span>
+                        </div>
+                        <div style="width:100%; height:6px; background:rgba(255, 255, 255, 0.05); border-radius:3px; overflow:hidden;">
+                            <div style="width: ${percentage}%; height:100%; background:linear-gradient(90deg, #3b82f6, #60a5fa); border-radius:3px; transition: width 0.5s ease-out;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+            keywordListContainer.innerHTML = html;
+        } catch (error) {
+            console.error("Failed to load research stats: ", error);
+            keywordListContainer.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 20px 0;">網路連線錯誤，無法載入數據。</div>`;
+        }
     };
 
     const resetSteps = () => {
