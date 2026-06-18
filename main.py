@@ -1,7 +1,10 @@
 import os
 import logging
 import datetime
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+import uuid
+import asyncio
+import json
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +14,19 @@ from google.genai import types
 from google.genai.errors import APIError
 from google.cloud import storage
 from google.cloud import discoveryengine_v1beta as discoveryengine
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# Initialize Firebase Admin SDK
+try:
+    # Use Application Default Credentials (ADC) automatically
+    firebase_admin.initialize_app()
+    logging.info("Firebase Admin initialized successfully using Application Default Credentials.")
+except ValueError:
+    # App already initialized
+    pass
+except Exception as e:
+    logging.error(f"Failed to initialize Firebase Admin: {str(e)}")
 
 
 # Setup logging
@@ -46,8 +62,11 @@ GCP_DATASTORE_ID = os.getenv("GCP_DATASTORE_ID")
 GCP_BUCKET_NAME = os.getenv("GCP_BUCKET_NAME")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
 
-import json
-import asyncio
+FIREBASE_API_KEY = os.getenv("FIREBASE_API_KEY")
+FIREBASE_AUTH_DOMAIN = os.getenv("FIREBASE_AUTH_DOMAIN")
+FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET")
+FIREBASE_MESSAGING_SENDER_ID = os.getenv("FIREBASE_MESSAGING_SENDER_ID")
+FIREBASE_APP_ID = os.getenv("FIREBASE_APP_ID")
 
 try:
     MAX_QUOTA = int(os.getenv("MAX_QUOTA", "50"))
@@ -167,53 +186,39 @@ def health_check():
         "datastore_id": GCP_DATASTORE_ID
     }
 
-# Analysis endpoint
-@app.post("/api/analyze")
-async def analyze_health_report(
-    file: UploadFile = File(...),
-    question: str = Form(...),
-    invite_code: str = Form(...)
+# Firebase web client configuration endpoint
+@app.get("/api/config")
+def get_firebase_config():
+    return {
+        "firebase_config": {
+            "apiKey": FIREBASE_API_KEY,
+            "authDomain": FIREBASE_AUTH_DOMAIN,
+            "projectId": GCP_PROJECT_ID,
+            "storageBucket": FIREBASE_STORAGE_BUCKET,
+            "messagingSenderId": FIREBASE_MESSAGING_SENDER_ID,
+            "appId": FIREB# Background job to analyze report asynchronously
+async def async_analyze_job(
+    task_id: str,
+    file_bytes: bytes,
+    file_mime: str,
+    file_name: str,
+    question: str,
+    code_clean: str,
+    invite_limit: int,
+    remaining: int
 ):
-    # Ensure client is initialized
-    ai_client = get_genai_client()
-    
-    if not GCP_DATASTORE_ID:
-        raise HTTPException(
-            status_code=400,
-            detail="GCP_DATASTORE_ID 未設定。請參考 GCP_GUIDE.md 完成設定。"
-        )
-        
-    # 邀請碼驗證與防暴破
-    code_clean = invite_code.strip().upper() if invite_code else ""
-    if code_clean not in INVITATION_LIMITS:
-        await asyncio.sleep(1.0)  # 延遲防刷
-        log_invite_code_usage(code_clean, file.filename, 0, "invalid_code")
-        raise HTTPException(
-            status_code=403,
-            detail="邀請碼無效，請聯繫管理員。"
-        )
-        
-    invite_limit = INVITATION_LIMITS[code_clean]
-    async with quota_lock:
-        quota_data = load_quota_store()
-        used = quota_data.get(code_clean, 0)
-        if used >= invite_limit:
-            log_invite_code_usage(code_clean, file.filename, 0, "quota_exhausted")
-            raise HTTPException(
-                status_code=403,
-                detail="此邀請碼的配額已用盡。"
-            )
-        # 先扣減額度以防併發超用
-        quota_data[code_clean] = used + 1
-        save_quota_store(quota_data)
-        remaining = invite_limit - (used + 1)
-        
+    logger.info(f"Starting background job for task {task_id}")
     try:
-        # Read the uploaded file bytes
-        file_bytes = await file.read()
-        file_mime = file.content_type
-        
-        logger.info(f"Received file: {file.filename}, type: {file_mime}, size: {len(file_bytes)} bytes")
+        db = firestore.client()
+        task_ref = db.collection("analysis_tasks").document(task_id)
+    except Exception as e:
+        logger.error(f"Firestore Client initialization failed in background: {str(e)}")
+        # 即使 Firestore 連線異常，為了安全仍須先寫入 local usage_log 備份
+        log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", f"Firestore Error: {str(e)}")
+        return
+
+    try:
+        ai_client = get_genai_client()
         
         # Package for multimodal generation
         user_report = types.Part.from_bytes(
@@ -261,7 +266,7 @@ async def analyze_health_report(
         prompt = f"請幫我分析這份健檢報告。使用者目前最想了解的問題是：{question}"
         
         # Call Gemini model with 120s timeout limit using asyncio.wait_for and asyncio.to_thread
-        logger.info(f"Calling Gemini model '{GEMINI_MODEL}' with grounding (120s timeout)...")
+        logger.info(f"Background task {task_id}: Calling Gemini '{GEMINI_MODEL}' (120s timeout)...")
         try:
             response = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -273,22 +278,21 @@ async def analyze_health_report(
                 timeout=120.0
             )
         except asyncio.TimeoutError:
-            logger.error("Gemini analysis request timed out (120 seconds).")
+            logger.error(f"Background task {task_id} timed out after 120s.")
             # 發生超時，退回額度
             async with quota_lock:
                 quota_data = load_quota_store()
                 used = quota_data.get(code_clean, 1)
                 quota_data[code_clean] = max(0, used - 1)
                 save_quota_store(quota_data)
-            log_invite_code_usage(code_clean, file.filename, len(file_bytes), "failed", "Request Timed Out (120s)")
-            return JSONResponse(
-                status_code=504,
-                content={
-                    "success": False,
-                    "detail": "AI 顧問分析超時，請確認您的網路狀況或稍後再試。"
-                }
-            )
-        
+            
+            task_ref.update({
+                "status": "failed",
+                "error": "AI 顧問分析超時，請確認您的網路狀況或稍後再試。"
+            })
+            log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", "Request Timed Out (120s)")
+            return
+
         # Extract response text and grounding metadata (citations)
         ai_response_text = response.text
         citations = []
@@ -326,16 +330,17 @@ async def analyze_health_report(
                 seen.add(c["title"])
                 unique_citations.append(c)
                 
-        log_invite_code_usage(code_clean, file.filename, len(file_bytes), "success")
-        return JSONResponse({
-            "success": True,
-            "analysis": ai_response_text,
-            "citations": unique_citations,
-            "remaining_quota": remaining
+        # Write success result to Firestore
+        task_ref.update({
+            "status": "success",
+            "result": ai_response_text,
+            "citations": unique_citations
         })
-        
+        log_invite_code_usage(code_clean, file_name, len(file_bytes), "success")
+        logger.info(f"Background task {task_id} finished successfully.")
+
     except APIError as g_err:
-        logger.error(f"Google API Error: {str(g_err)}")
+        logger.error(f"Background task APIError: {str(g_err)}")
         # 發生錯誤，退回額度
         async with quota_lock:
             quota_data = load_quota_store()
@@ -343,16 +348,14 @@ async def analyze_health_report(
             quota_data[code_clean] = max(0, used - 1)
             save_quota_store(quota_data)
             
-        log_invite_code_usage(code_clean, file.filename, len(file_bytes) if 'file_bytes' in locals() else 0, "failed", str(g_err))
-        return JSONResponse(
-            status_code=502,
-            content={
-                "success": False,
-                "detail": f"GCP API 呼叫失敗，請確認您的 Data Store 是否已建立完成且匯入資料。錯誤詳情: {str(g_err)}"
-            }
-        )
+        task_ref.update({
+            "status": "failed",
+            "error": f"GCP API 呼叫失敗，請確認您的 Data Store 是否已建立完成且匯入資料。錯誤詳情: {str(g_err)}"
+        })
+        log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", str(g_err))
+        
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(f"Background task unexpected error: {str(e)}")
         # 發生錯誤，退回額度
         async with quota_lock:
             quota_data = load_quota_store()
@@ -360,14 +363,107 @@ async def analyze_health_report(
             quota_data[code_clean] = max(0, used - 1)
             save_quota_store(quota_data)
             
-        log_invite_code_usage(code_clean, file.filename, len(file_bytes) if 'file_bytes' in locals() else 0, "failed", str(e))
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "detail": f"伺服器內部錯誤：{str(e)}"
-            }
+        task_ref.update({
+            "status": "failed",
+            "error": f"伺服器背景處理發生內部錯誤：{str(e)}"
+        })
+        log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", str(e))
+
+
+# Non-blocking analysis endpoint
+@app.post("/api/analyze")
+async def analyze_health_report(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    question: str = Form(...),
+    invite_code: str = Form(...)
+):
+    # Ensure client is initialized
+    get_genai_client()
+    
+    if not GCP_DATASTORE_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="GCP_DATASTORE_ID 未設定。請參考 GCP_GUIDE.md 完成設定。"
         )
+        
+    # 邀請碼驗證與防暴破
+    code_clean = invite_code.strip().upper() if invite_code else ""
+    if code_clean not in INVITATION_LIMITS:
+        await asyncio.sleep(1.0)  # 延遲防刷
+        log_invite_code_usage(code_clean, file.filename, 0, "invalid_code")
+        raise HTTPException(
+            status_code=403,
+            detail="邀請碼無效，請聯繫管理員。"
+        )
+        
+    invite_limit = INVITATION_LIMITS[code_clean]
+    async with quota_lock:
+        quota_data = load_quota_store()
+        used = quota_data.get(code_clean, 0)
+        if used >= invite_limit:
+            log_invite_code_usage(code_clean, file.filename, 0, "quota_exhausted")
+            raise HTTPException(
+                status_code=403,
+                detail="此邀請碼的配額已用盡。"
+            )
+        # 先扣減額度以防併發超用
+        quota_data[code_clean] = used + 1
+        save_quota_store(quota_data)
+        remaining = invite_limit - (used + 1)
+
+    # Generate unique Task ID
+    task_id = str(uuid.uuid4())
+    logger.info(f"Received request, generated task ID: {task_id}")
+
+    try:
+        # Create Firestore placeholder doc first to establish status "processing"
+        db = firestore.client()
+        task_ref = db.collection("analysis_tasks").document(task_id)
+        task_ref.set({
+            "status": "processing",
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "result": None,
+            "citations": [],
+            "error": None
+        })
+    except Exception as e:
+        logger.error(f"Failed to create task in Firestore: {str(e)}")
+        # 回退已扣除的額度
+        async with quota_lock:
+            quota_data = load_quota_store()
+            used = quota_data.get(code_clean, 1)
+            quota_data[code_clean] = max(0, used - 1)
+            save_quota_store(quota_data)
+        raise HTTPException(
+            status_code=500,
+            detail=f"無法建立任務狀態，請確認 GCP 服務帳戶已配置 Cloud Datastore User 權限。錯誤: {str(e)}"
+        )
+
+    # Read uploaded file bytes in memory
+    file_bytes = await file.read()
+    file_mime = file.content_type
+
+    # Dispatch to background task execution
+    background_tasks.add_task(
+        async_analyze_job,
+        task_id=task_id,
+        file_bytes=file_bytes,
+        file_mime=file_mime,
+        file_name=file.filename,
+        question=question,
+        code_clean=code_clean,
+        invite_limit=invite_limit,
+        remaining=remaining
+    )
+
+    # Immediately respond with task details for polling/real-time subscription
+    return JSONResponse({
+        "success": True,
+        "task_id": task_id,
+        "status": "processing",
+        "remaining_quota": remaining
+    })
 
 # Quota reset endpoint
 @app.post("/api/reset")

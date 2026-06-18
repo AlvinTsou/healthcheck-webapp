@@ -1,4 +1,27 @@
 document.addEventListener('DOMContentLoaded', () => {
+    let db = null;
+    let firebaseInitialized = false;
+
+    // Load Firebase configuration from FastAPI backend
+    const initFirebase = async () => {
+        try {
+            const res = await fetch('/api/config');
+            const data = await res.json();
+            if (data.firebase_config && data.firebase_config.apiKey) {
+                firebase.initializeApp(data.firebase_config);
+                db = firebase.firestore();
+                firebaseInitialized = true;
+                console.log("Firebase initialized successfully from remote config.");
+            } else {
+                console.warn("Firebase configuration was empty. Local dev mode or missing env vars.");
+            }
+        } catch (err) {
+            console.error("Failed to load Firebase configuration: ", err);
+        }
+    };
+
+    initFirebase();
+
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
     const previewContainer = document.getElementById('preview-container');
@@ -176,6 +199,24 @@ document.addEventListener('DOMContentLoaded', () => {
     inviteInput.addEventListener('input', checkFormValidity);
 
     // --- Submit Form ---
+    let isProcessingAsync = false;
+
+    const restoreFormUI = () => {
+        submitBtn.disabled = false;
+        questionInput.disabled = false;
+        inviteInput.disabled = false;
+        if (document.getElementById('remove-file-btn')) {
+            document.getElementById('remove-file-btn').disabled = false;
+        }
+        checkFormValidity();
+        submitBtn.innerHTML = `
+            <span>開始智慧分析</span>
+            <svg class="arrow-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        `;
+    };
+
     analyzeForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!selectedFile || !questionInput.value.trim() || !inviteInput.value.trim()) return;
@@ -187,6 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById('remove-file-btn')) {
             document.getElementById('remove-file-btn').disabled = true;
         }
+        submitBtn.innerHTML = `
+            <span>建立分析任務...</span>
+        `;
         
         statusBadge.textContent = '分析中...';
         statusBadge.className = 'status-badge analyzing';
@@ -201,6 +245,8 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('question', questionInput.value.trim());
         formData.append('invite_code', inviteInput.value.trim());
 
+        isProcessingAsync = false;
+
         try {
             const response = await fetch('/api/analyze', {
                 method: 'POST',
@@ -213,12 +259,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(data.detail || '分析失敗，請檢查後端連線。');
             }
 
-            // Success UI
-            statusBadge.textContent = '分析完成';
-            statusBadge.className = 'status-badge success';
-            resultLoading.classList.add('hidden');
-            resultSuccess.classList.remove('hidden');
-
             // Render Quota Badge
             if (data.remaining_quota !== undefined) {
                 quotaBadge.textContent = `剩餘額度: ${data.remaining_quota} 次`;
@@ -227,52 +267,114 @@ document.addEventListener('DOMContentLoaded', () => {
                 quotaBadge.style.display = 'none';
             }
 
-            // Save analysis text for copy function
-            currentAnalysisText = data.analysis;
-
-            // Render Markdown Cards
-            const renderer = new marked.Renderer();
-            renderer.link = (href, title, text) => {
-                return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
-            };
-            marked.setOptions({ renderer: renderer });
-            
-            reportBody.innerHTML = '';
-            
-            // Split markdown by H2 headers "## "
-            const rawSections = data.analysis.split(/^(?=##\s+)/m);
-            rawSections.forEach(section => {
-                const trimmed = section.trim();
-                if (!trimmed) return;
-                
-                const card = document.createElement('div');
-                card.className = 'result-card';
-                card.innerHTML = marked.parse(trimmed);
-                reportBody.appendChild(card);
-            });
-
-            // Render Citations
-            if (data.citations && data.citations.length > 0) {
-                citationsArea.classList.remove('hidden');
-                citationsList.innerHTML = '';
-                data.citations.forEach(cit => {
-                    const badge = document.createElement('a');
-                    badge.className = 'citation-badge';
-                    badge.href = cit.uri;
-                    badge.target = '_blank';
-                    badge.rel = 'noopener noreferrer';
-                    badge.innerHTML = `
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 4px;">
-                            <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM18 20H6V4H13V9H18V20Z" fill="currentColor"/>
-                        </svg>${cit.title}
-                    `;
-                    citationsList.appendChild(badge);
-                });
-            } else {
-                citationsArea.classList.add('hidden');
+            const taskId = data.task_id;
+            if (!taskId) {
+                throw new Error('未取得 Task ID，無法追蹤分析狀態。');
             }
 
+            if (!firebaseInitialized || !db) {
+                throw new Error('Firebase 尚未初始化完成，無法即時監聽分析狀態。請確認 GCP 存取權限。');
+            }
+
+            isProcessingAsync = true;
+            submitBtn.innerHTML = `
+                <span>AI 分析與檢索中...</span>
+            `;
+
+            // Subscribe to task updates in Firestore
+            const unsubscribe = db.collection("analysis_tasks").doc(taskId).onSnapshot((doc) => {
+                if (!doc.exists) return;
+                const taskData = doc.data();
+
+                if (taskData.status === 'processing') {
+                    statusBadge.textContent = '分析與檢索中...';
+                    statusBadge.className = 'status-badge analyzing';
+                } else if (taskData.status === 'success') {
+                    unsubscribe(); // Stop listening
+                    isProcessingAsync = false;
+
+                    // Success UI
+                    statusBadge.textContent = '分析完成';
+                    statusBadge.className = 'status-badge success';
+                    resultLoading.classList.add('hidden');
+                    resultSuccess.classList.remove('hidden');
+
+                    // Save analysis text for copy function
+                    currentAnalysisText = taskData.result;
+
+                    // Render Markdown Cards
+                    const renderer = new marked.Renderer();
+                    renderer.link = (href, title, text) => {
+                        return `<a href="${href}" title="${title || ''}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+                    };
+                    marked.setOptions({ renderer: renderer });
+                    
+                    reportBody.innerHTML = '';
+                    
+                    // Split markdown by H2 headers "## "
+                    const rawSections = taskData.result.split(/^(?=##\s+)/m);
+                    rawSections.forEach(section => {
+                        const trimmed = section.trim();
+                        if (!trimmed) return;
+                        
+                        const card = document.createElement('div');
+                        card.className = 'result-card';
+                        card.innerHTML = marked.parse(trimmed);
+                        reportBody.appendChild(card);
+                    });
+
+                    // Render Citations
+                    if (taskData.citations && taskData.citations.length > 0) {
+                        citationsArea.classList.remove('hidden');
+                        citationsList.innerHTML = '';
+                        taskData.citations.forEach(cit => {
+                            const badge = document.createElement('a');
+                            badge.className = 'citation-badge';
+                            badge.href = cit.uri;
+                            badge.target = '_blank';
+                            badge.rel = 'noopener noreferrer';
+                            badge.innerHTML = `
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 4px;">
+                                    <path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM18 20H6V4H13V9H18V20Z" fill="currentColor"/>
+                                </svg>${cit.title}
+                            `;
+                            citationsList.appendChild(badge);
+                        });
+                    } else {
+                        citationsArea.classList.add('hidden');
+                    }
+
+                    restoreFormUI();
+
+                } else if (taskData.status === 'failed') {
+                    unsubscribe(); // Stop listening
+                    isProcessingAsync = false;
+
+                    // Error UI
+                    statusBadge.textContent = '發生錯誤';
+                    statusBadge.className = 'status-badge idle';
+                    resultLoading.classList.add('hidden');
+                    resultIdle.classList.remove('hidden');
+                    quotaBadge.style.display = 'none';
+                    
+                    alert(`錯誤：${taskData.error || '背景分析發生未知錯誤。'}`);
+                    restoreFormUI();
+                }
+            }, (error) => {
+                unsubscribe();
+                isProcessingAsync = false;
+                console.error("Firestore subscription error: ", error);
+                
+                statusBadge.textContent = '發生錯誤';
+                statusBadge.className = 'status-badge idle';
+                resultLoading.classList.add('hidden');
+                resultIdle.classList.remove('hidden');
+                alert(`即時訂閱錯誤：${error.message}`);
+                restoreFormUI();
+            });
+
         } catch (error) {
+            isProcessingAsync = false;
             // Error UI
             statusBadge.textContent = '發生錯誤';
             statusBadge.className = 'status-badge idle';
@@ -282,14 +384,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             alert(`錯誤：${error.message}`);
         } finally {
-            // Restore UI states
-            submitBtn.disabled = false;
-            questionInput.disabled = false;
-            inviteInput.disabled = false;
-            if (document.getElementById('remove-file-btn')) {
-                document.getElementById('remove-file-btn').disabled = false;
+            if (!isProcessingAsync) {
+                restoreFormUI();
             }
-            checkFormValidity();
         }
     });
 
