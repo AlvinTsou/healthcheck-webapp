@@ -113,8 +113,27 @@
    ```
 
 ### D. 日常運維與重啟服務 (GCP VM 環境)
-在 VM 上進行日常維護時，可使用以下指令管理 Docker 容器服務：
-* **重啟 WebApp 與 Nginx 服務**（如更新了 `.env` 或程式碼）：
+
+#### 1. 從本機進行 VM 連線、同步與部署
+您可以在**本機電腦**的終端機執行以下指令，直接與 GCP VM 進行連線、同步設定或遠端部署：
+
+* **SSH 連線至 VM**：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c
+  ```
+* **同步本地 `.env` 設定檔至 VM**：
+  ```bash
+  gcloud compute scp .env hrv001:~/healthcheck-webapp/.env --zone=asia-east1-c
+  ```
+* **從本地直接觸發遠端 VM 部署與重啟**：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="cd ~/healthcheck-webapp && docker-compose down && docker-compose up -d --build"
+  ```
+
+#### 2. 在 VM 上進行運維
+登入 VM 後，在 `~/healthcheck-webapp` 目錄下可使用以下指令管理 Docker 容器服務：
+
+* **重啟 WebApp 與 Nginx 服務**：
   ```bash
   docker-compose down && docker-compose up -d --build
   ```
