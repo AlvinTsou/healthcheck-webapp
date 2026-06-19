@@ -25,4 +25,6 @@ usage_log.jsonl
 loadtest.go
 load_test.py
 
-
+# Large resources or documents
+resource/*.pdf
+*.pdf

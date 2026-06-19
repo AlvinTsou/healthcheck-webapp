@@ -105,6 +105,37 @@ RESEARCH_KEYWORDS = [
     "肌酸酐", "腎臟", "血壓", "骨質疏鬆", "心血管", "貧血"
 ]
 
+# Load medical glossary for Chinese-English translation
+def load_medical_glossary() -> dict:
+    glossary_map = {}
+    path = "medical_glossary.json"
+    if not os.path.exists(path):
+        path = "resource/medical_glossary.json"
+        
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for item in data:
+                    zh = item.get("zh_tw")
+                    en = item.get("en")
+                    if zh and en:
+                        glossary_map[zh] = en
+                    elif zh and item.get("abbreviations"):
+                        abbr = item.get("abbreviations")
+                        if isinstance(abbr, list) and len(abbr) > 0:
+                            glossary_map[zh] = abbr[0]
+            logger.info(f"Successfully loaded {len(glossary_map)} glossary terms from {path}.")
+        except Exception as e:
+            logger.error(f"Failed to load medical glossary: {str(e)}")
+    else:
+        logger.warning("Glossary file medical_glossary.json not found in root or resource/.")
+    return glossary_map
+
+GLOSSARY_MAP = load_medical_glossary()
+# Compact serialization for Gemini prompt context
+GLOSSARY_STR = ", ".join([f"{k}: {v}" for k, v in GLOSSARY_MAP.items()]) if GLOSSARY_MAP else ""
+
 QUOTA_STORE_PATH = "quota_store.json"
 USAGE_LOG_PATH = "usage_log.jsonl"
 quota_lock = asyncio.Lock()
@@ -221,9 +252,10 @@ async def async_analyze_job(
     question: str,
     code_clean: str,
     invite_limit: int,
-    remaining: int
+    remaining: int,
+    lang: str = "zh"
 ):
-    logger.info(f"Starting background job for task {task_id}")
+    logger.info(f"Starting background job for task {task_id} with language {lang}")
     try:
         db = firestore.client()
         task_ref = db.collection("analysis_tasks").document(task_id)
@@ -247,24 +279,48 @@ async def async_analyze_job(
         logger.info(f"Using Datastore for grounding: {datastore_path}")
         
         # System instructions to prevent medical hallucinations and enforce formatting
-        system_instruction = (
-            "你是一位專業的健康管理 AI 顧問。當使用者提供健檢報告或數據時，你必須精確對照知識庫中《健檢報告完全手冊》的醫學標準值與建議。\n"
-            "請遵循以下規則回答，且必須將分析內容結構化地劃分為以下四個大區塊，每個區塊開頭必須精確使用規定的 `##` 標題，不得自行更改或省略：\n\n"
-            "## 1. 健檢指標快速對照\n"
-            "（在此處以 Markdown 表格列出所有檢測數值與標準值的對比。表格必須包含項目、參考值、檢測值、狀態。如果有異常的數值，狀態欄必須填寫為 **偏高**、**偏低** 或 **異常**，以加粗的星號包裹，方便前端加亮顯示。）\n\n"
-            "## 2. 核心異常解析與潛在風險\n"
-            "（在此處詳細解釋上傳報告中異常指標的生理學成因以及可能帶來的長期健康風險。）\n\n"
-            "## 3. 個人化健康管理行動方案\n"
-            "（在此處提供具體可執行的飲食調整原則、適合的運動類型與頻率，以及日常起居作息之具體改善建議。）\n\n"
-            "## 4. 專屬諮詢解答\n"
-            "（在此處正面解答使用者最關心的諮詢問題。）\n\n"
-            "請注意：\n"
-            "1. 你的回答必須緊密基於知識庫事實，提供醫學數據的衛教解釋與日常健康管理建議。\n"
-            "2. 你的回答中絕對不能包含『專業醫學依據來源』或『醫學依據來源』這類參考來源說明標題，也絕對不能列出或提及任何以 『gs://』 開頭的 Google Cloud Storage 檔案路徑與連結。\n"
-            "3. 你的回答末尾務必加上以下免責聲明：\n"
-            "   『【免責聲明】本分析僅供個人健康管理參考，不具備醫療診斷效力。若您的數據異常或有身體不適，請務必諮詢專業醫師進行診斷與治療。』\n"
-            "4. 如果相關標準或答案在知識庫中完全找不到，請禮貌地告知使用者，並引導使用者諮詢醫生，不要盲目猜測或虛構數據。"
-        )
+        if lang == "en":
+            system_instruction = (
+                "You are a professional health management AI consultant. When a user provides a health check report or data, you must precisely match it against the medical reference values and suggestions in the database \"Health Check Complete Manual\".\n"
+                "Please follow the rules below and structure your answer into the following four main sections. Each section must start with the exact specified `##` header. Do not modify or omit them:\n\n"
+                "## 1. Quick Comparison of Health Indicators\n"
+                "(List the comparison of all test values and reference values in a Markdown table here. The table must contain: Item, Reference Value, Test Value, Status. If there are abnormal values, the status column must be filled as **High**, **Low**, or **Abnormal**, wrapped in bold double asterisks to facilitate highlighting on the frontend.)\n\n"
+                "## 2. Core Abnormalities & Potential Risks\n"
+                "(Explain in detail the physiological causes of the abnormal indicators in the uploaded report and the potential long-term health risks.)\n\n"
+                "## 3. Personalized Health Action Plan\n"
+                "(Provide specific and actionable dietary adjustment principles, suitable exercise types and frequencies, and concrete suggestions for daily routine improvements.)\n\n"
+                "## 4. Q&A\n"
+                "(Directly answer the consultation questions that the user is most concerned about.)\n\n"
+                "Please note:\n"
+                "1. Your answer must be closely based on the facts in the knowledge base, providing educational explanations of medical data and daily health management advice.\n"
+                "2. Your answer must absolutely NOT contain headings like 'Source of Professional Medical Basis' or 'Medical Basis Source', nor mention any Google Cloud Storage file paths/links starting with 'gs://'.\n"
+                "3. You must append the following disclaimer at the end of your answer:\n"
+                "   \"[Disclaimer] This analysis is for personal health management reference only and does not constitute a medical diagnosis. If your data is abnormal or you feel unwell, please consult a professional physician for diagnosis and treatment.\"\n"
+                "4. If the relevant standards or answers are not found in the knowledge base, please politely inform the user and guide them to consult a doctor; do not blindly guess or fabricate data.\n"
+                "5. Translation Rules: You must write the entire report in English. Since the reference manual is in Chinese, you must translate the medical terms from Chinese to English. You must strictly use the following translation mapping for terminology:\n"
+                f"{GLOSSARY_STR}"
+            )
+            prompt = f"Please help me analyze this health check report. The question the user is most concerned about is: {question}"
+        else:
+            system_instruction = (
+                "你是一位專業的健康管理 AI 顧問。當使用者提供健檢報告或數據時，你必須精確對照知識庫中《健檢報告完全手冊》的醫學標準值與建議。\n"
+                "請遵循以下規則回答，且必須將分析內容結構化地劃分為以下四個大區塊，每個區塊開頭必須精確使用規定的 `##` 標題，不得自行更改或省略：\n\n"
+                "## 1. 健檢指標快速對照\n"
+                "（在此處以 Markdown 表格列出所有檢測數值與標準值的對比。表格必須包含項目、參考值、檢測值、狀態。如果有異常的數值，狀態欄必須填寫為 **偏高**、**偏低** 或 **異常**，以加粗的星號包裹，方便前端加亮顯示。）\n\n"
+                "## 2. 核心異常解析與潛在風險\n"
+                "（在此處詳細解釋上傳報告中異常指標的生理學成因以及可能帶來的長期健康風險。）\n\n"
+                "## 3. 個人化健康管理行動方案\n"
+                "（在此處提供具體可執行的飲食調整原則、適合的運動類型與頻率，以及日常起居作息之具體改善建議。）\n\n"
+                "## 4. 專屬諮詢解答\n"
+                "（在此處正面解答使用者最關心的諮詢問題。）\n\n"
+                "請注意：\n"
+                "1. 你的回答必須緊密基於知識庫事實，提供醫學數據的衛教解釋與日常健康管理建議。\n"
+                "2. 你的回答中絕對不能包含『專業醫學依據來源』或『醫學依據來源』這類參考來源說明標題，也絕對不能列出或提及任何以 『gs://』 開頭的 Google Cloud Storage 檔案路徑與連結。\n"
+                "3. 你的回答末尾務必加上以下免責聲明：\n"
+                "   『【免責聲明】本分析僅供個人健康管理參考，不具備醫療診斷效力。若您的數據異常或有身體不適，請務必諮詢專業醫師進行診斷與治療。』\n"
+                "4. 如果相關標準或答案在知識庫中完全找不到，請禮貌地告知使用者，並引導使用者諮詢醫生，不要盲目猜測或虛構數據。"
+            )
+            prompt = f"請幫我分析這份健檢報告。使用者目前最想了解的問題是：{question}"
         
         # Define Grounding Tool
         grounding_tool = types.Tool(
@@ -279,8 +335,6 @@ async def async_analyze_job(
             system_instruction=system_instruction,
             temperature=0.2 # low temperature for strict factual outputs
         )
-        
-        prompt = f"請幫我分析這份健檢報告。使用者目前最想了解的問題是：{question}"
         
         # Call Gemini model with 120s timeout limit using asyncio.wait_for and asyncio.to_thread
         logger.info(f"Background task {task_id}: Calling Gemini '{GEMINI_MODEL}' (120s timeout)...")
@@ -305,7 +359,7 @@ async def async_analyze_job(
             
             task_ref.update({
                 "status": "failed",
-                "error": "AI 顧問分析超時，請確認您的網路狀況或稍後再試。"
+                "error": "TIMEOUT_ERROR"
             })
             log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", "Request Timed Out (120s)")
             return
@@ -334,14 +388,14 @@ async def async_analyze_job(
                     elif chunk.retrieved_context:
                         uri = chunk.retrieved_context.uri
                         # Clean up cloud storage uri to be more user-friendly
-                        title = os.path.basename(uri) if uri else "內部醫學對照資料"
+                        title = os.path.basename(uri) if uri else ("Medical Reference Guide" if lang == "en" else "內部醫學對照資料")
                         citations.append({
                             "title": title,
                             "uri": uri
                         })
                     else:
                         citations.append({
-                            "title": "手冊對照基準段落",
+                            "title": "Reference Section" if lang == "en" else "手冊對照基準段落",
                             "uri": "#"
                         })
                         
@@ -356,16 +410,28 @@ async def async_analyze_job(
         # 1. Structured Metrics Extraction
         extracted_metrics = []
         try:
-            extraction_prompt = (
-                "請仔細閱讀以下健檢分析報告。你的任務是從該報告中，結構化地提取出所有提到的健檢項目、其檢測數值、單位以及判定狀態。\n"
-                "請必須嚴格按照以下 JSON 格式回傳，不得包含 any 其它字元或 markdown 包裹：\n"
-                "{\n"
-                "  \"metrics\": [\n"
-                "    {\"item\": \"項目名稱\", \"value\": \"檢測數值\", \"unit\": \"單位\", \"status\": \"正常/偏高/偏低/異常\"}\n"
-                "  ]\n"
-                "}\n\n"
-                f"分析報告內容：\n{ai_response_text}"
-            )
+            if lang == "en":
+                extraction_prompt = (
+                    "Please read the following health check analysis report carefully. Your task is to extract all mentioned health check items, their test values, units, and status from the report in a structured format.\n"
+                    "You must return strictly in the following JSON format without any other characters or markdown wrapper:\n"
+                    "{\n"
+                    "  \"metrics\": [\n"
+                    "    {\"item\": \"Item Name\", \"value\": \"Test Value\", \"unit\": \"Unit\", \"status\": \"Normal/High/Low/Abnormal\"}\n"
+                    "  ]\n"
+                    "}\n\n"
+                    f"Report Content:\n{ai_response_text}"
+                )
+            else:
+                extraction_prompt = (
+                    "請仔細閱讀以下健檢分析報告。你的任務是從該報告中，結構化地提取出所有提到的健檢項目、其檢測數值、單位以及判定狀態。\n"
+                    "請必須嚴格按照以下 JSON 格式回傳，不得包含 any 其它字元或 markdown 包裹：\n"
+                    "{\n"
+                    "  \"metrics\": [\n"
+                    "    {\"item\": \"項目名稱\", \"value\": \"檢測數值\", \"unit\": \"單位\", \"status\": \"正常/偏高/偏低/異常\"}\n"
+                    "  ]\n"
+                    "}\n\n"
+                    f"分析報告內容：\n{ai_response_text}"
+                )
             
             extract_resp = await asyncio.to_thread(
                 ai_client.models.generate_content,
@@ -386,20 +452,33 @@ async def async_analyze_job(
         # 2. Self-Verification and Accuracy Audit
         verification = {
             "accuracy_score": 100,
-            "reason": "報告結構完整，標準對照無誤。"
+            "reason": "Evaluation passed." if lang == "en" else "報告結構完整，標準對照無誤。"
         }
         try:
-            verification_prompt = (
-                "作為醫學報告審查員，請仔細閱讀以下健檢分析報告。\n"
-                "你的任務是評估該報告是否符合標準衛教知識，並特別檢查報告中的檢測值是否與大眾認知之醫學常識相符（例如，檢查有無將收縮壓 135 mmHg 描述為正常，或者無中生有報告中未提及的指標）。\n"
-                "請給出一個 0 到 100 的正確性信任分數 (accuracy_score)，以及繁體中文 2 句話以內的評估理由 (reason)。\n"
-                "請必須嚴格按照以下 JSON 格式回傳：\n"
-                "{\n"
-                "  \"accuracy_score\": 95,\n"
-                "  \"reason\": \"評估理由\"\n"
-                "}\n\n"
-                f"分析報告內容：\n{ai_response_text}"
-            )
+            if lang == "en":
+                verification_prompt = (
+                    "As a medical report auditor, please read the following health check analysis report carefully.\n"
+                    "Your task is to assess whether the report aligns with standard health education knowledge, and specifically check if the test values in the report match general medical common sense (for example, check if a systolic blood pressure of 135 mmHg is incorrectly described as normal, or if any indicators not mentioned in the report are fabricated).\n"
+                    "Please provide a correctness confidence score (accuracy_score) from 0 to 100, and an assessment reason (reason) in English within 2 sentences.\n"
+                    "You must return strictly in the following JSON format:\n"
+                    "{\n"
+                    "  \"accuracy_score\": 95,\n"
+                    "  \"reason\": \"Evaluation reason\"\n"
+                    "}\n\n"
+                    f"Report Content:\n{ai_response_text}"
+                )
+            else:
+                verification_prompt = (
+                    "作為醫學報告審查員，請仔細閱讀以下健檢分析報告。\n"
+                    "你的任務是評估該報告是否符合標準衛教知識，並特別檢查報告中的檢測值是否與大眾認知之醫學常識相符（例如，檢查有無將收縮壓 135 mmHg 描述為正常，或者無中生有報告中未提及的指標）。\n"
+                    "請給出一個 0 到 100 的正確性信任分數 (accuracy_score)，以及繁體中文 2 句話以內的評估理由 (reason)。\n"
+                    "請必須嚴格按照以下 JSON 格式回傳：\n"
+                    "{\n"
+                    "  \"accuracy_score\": 95,\n"
+                    "  \"reason\": \"評估理由\"\n"
+                    "}\n\n"
+                    f"分析報告內容：\n{ai_response_text}"
+                )
             
             verify_resp = await asyncio.to_thread(
                 ai_client.models.generate_content,
@@ -414,13 +493,13 @@ async def async_analyze_job(
             verify_data = json.loads(verify_resp.text)
             verification = {
                 "accuracy_score": int(verify_data.get("accuracy_score", 100)),
-                "reason": verify_data.get("reason", "審查通過。")
+                "reason": verify_data.get("reason", "Evaluation passed." if lang == "en" else "審查通過。")
             }
         except Exception as ev_err:
             logger.error(f"Failed to verify report accuracy: {str(ev_err)}")
             verification = {
                 "accuracy_score": 100,
-                "reason": "系統預設審查通過。"
+                "reason": "Evaluation passed." if lang == "en" else "系統預設審查通過。"
             }
 
         # 3. Global Keyword Statistics Recording
@@ -466,7 +545,7 @@ async def async_analyze_job(
             
         task_ref.update({
             "status": "failed",
-            "error": f"GCP API 呼叫失敗，請確認您的 Data Store 是否已建立完成且匯入資料。錯誤詳情: {str(g_err)}"
+            "error": "API_ERROR"
         })
         log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", str(g_err))
         
@@ -481,7 +560,7 @@ async def async_analyze_job(
             
         task_ref.update({
             "status": "failed",
-            "error": f"伺服器背景處理發生內部錯誤：{str(e)}"
+            "error": "INTERNAL_ERROR"
         })
         log_invite_code_usage(code_clean, file_name, len(file_bytes), "failed", str(e))
 
@@ -580,7 +659,8 @@ async def analyze_health_report(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     question: str = Form(...),
-    invite_code: str = Form(...)
+    invite_code: str = Form(...),
+    lang: str = Form("zh")
 ):
     # Ensure client is initialized
     get_genai_client()
@@ -588,7 +668,7 @@ async def analyze_health_report(
     if not GCP_DATASTORE_ID:
         raise HTTPException(
             status_code=400,
-            detail="GCP_DATASTORE_ID 未設定。請參考 GCP_GUIDE.md 完成設定。"
+            detail="DATASTORE_NOT_CONFIGURED"
         )
         
     # 邀請碼驗證與防暴破
@@ -598,7 +678,7 @@ async def analyze_health_report(
         log_invite_code_usage(code_clean, file.filename, 0, "invalid_code")
         raise HTTPException(
             status_code=403,
-            detail="邀請碼無效，請聯繫管理員。"
+            detail="INVALID_INVITE_CODE"
         )
         
     invite_limit = INVITATION_LIMITS[code_clean]
@@ -609,7 +689,7 @@ async def analyze_health_report(
             log_invite_code_usage(code_clean, file.filename, 0, "quota_exhausted")
             raise HTTPException(
                 status_code=403,
-                detail="此邀請碼的配額已用盡。"
+                detail="QUOTA_EXHAUSTED"
             )
         # 先扣減額度以防併發超用
         quota_data[code_clean] = used + 1
@@ -641,7 +721,7 @@ async def analyze_health_report(
             save_quota_store(quota_data)
         raise HTTPException(
             status_code=500,
-            detail=f"無法建立任務狀態，請確認 GCP 服務帳戶已配置 Cloud Datastore User 權限。錯誤: {str(e)}"
+            detail="FIRESTORE_INIT_FAILED"
         )
 
     # Read uploaded file bytes in memory
@@ -658,7 +738,8 @@ async def analyze_health_report(
         question=question,
         code_clean=code_clean,
         invite_limit=invite_limit,
-        remaining=remaining
+        remaining=remaining,
+        lang=lang
     )
 
     # Dispatch to background Firestore cleanup check

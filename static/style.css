@@ -100,11 +100,49 @@ body {
     margin-bottom: 40px;
 }
 
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 900px;
+    margin: 0 auto 12px auto;
+}
+
 .logo {
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 12px;
+}
+
+/* Glassmorphism Language Dropdown */
+.lang-selector-container {
+    position: relative;
+}
+
+.lang-select {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #ffffff;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    outline: none;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.lang-select:focus, .lang-select:hover {
+    border-color: rgba(0, 242, 254, 0.5);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 10px rgba(0, 242, 254, 0.15);
+}
+
+.lang-select option {
+    background: #0f1123;
+    color: #ffffff;
 }
 
 .logo h1 {

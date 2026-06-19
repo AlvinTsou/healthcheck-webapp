@@ -1,6 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
     let db = null;
     let firebaseInitialized = false;
+    let currentLang = 'zh';
+    let translations = {};
 
     // Load Firebase configuration from FastAPI backend
     const initFirebase = async () => {
@@ -20,7 +22,77 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const loadLanguage = async (lang) => {
+        try {
+            let res = await fetch(`/lang/${lang}.json`);
+            if (!res.ok) {
+                res = await fetch(`/static/lang/${lang}.json`);
+            }
+            translations = await res.json();
+            currentLang = lang;
+            const selectEl = document.getElementById('lang-select');
+            if (selectEl) selectEl.value = lang;
+            localStorage.setItem('preferred_language', lang);
+            applyTranslations();
+            console.log(`Language loaded: ${lang}`);
+        } catch (err) {
+            console.error("Failed to load language: ", err);
+        }
+    };
+
+    const applyTranslations = () => {
+        // Translate elements with data-i18n
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (translations[key]) {
+                el.textContent = translations[key];
+            }
+        });
+
+        // Translate elements with data-i18n-html
+        document.querySelectorAll('[data-i18n-html]').forEach(el => {
+            const key = el.getAttribute('data-i18n-html');
+            if (translations[key]) {
+                el.innerHTML = translations[key];
+            }
+        });
+
+        // Translate placeholders
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            const key = el.getAttribute('data-i18n-placeholder');
+            if (translations[key]) {
+                el.placeholder = translations[key];
+            }
+        });
+
+        // Update document title
+        if (translations['document_title']) {
+            document.title = translations['document_title'];
+        }
+    };
+
+    const detectLanguage = () => {
+        const saved = localStorage.getItem('preferred_language');
+        if (saved) return saved;
+        
+        const sysLang = navigator.language || navigator.userLanguage || 'zh';
+        if (sysLang.toLowerCase().startsWith('zh')) {
+            return 'zh';
+        }
+        return 'en';
+    };
+
+    // Bind lang-select change
+    const langSelect = document.getElementById('lang-select');
+    if (langSelect) {
+        langSelect.addEventListener('change', (e) => {
+            loadLanguage(e.target.value);
+        });
+    }
+
     initFirebase();
+    const initialLang = detectLanguage();
+    loadLanguage(initialLang);
 
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
@@ -64,11 +136,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await navigator.clipboard.writeText(currentAnalysisText);
             const originalText = copyReportBtn.innerHTML;
+            const successText = translations['copied_success'] || '已複製！';
             copyReportBtn.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="currentColor"/>
                 </svg>
-                <span>已複製！</span>
+                <span>${successText}</span>
             `;
             copyReportBtn.classList.add('copied');
             setTimeout(() => {
@@ -76,7 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 copyReportBtn.classList.remove('copied');
             }, 1500);
         } catch (err) {
-            alert('複製失敗，請手動選取複製。');
+            const failAlert = currentLang === 'en' ? 'Copy failed, please select and copy manually.' : '複製失敗，請手動選取複製。';
+            alert(failAlert);
         }
     });
 
@@ -118,7 +192,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Validate file type
         const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
         if (!validTypes.includes(file.type)) {
-            alert('不支援的檔案格式！請上傳 PNG, JPG, JPEG 圖片或 PDF 檔案。');
+            const formatAlert = currentLang === 'en' ? 'Unsupported file format! Please upload PNG, JPG, JPEG image or PDF file.' : '不支援的檔案格式！請上傳 PNG, JPG, JPEG 圖片或 PDF 檔案。';
+            alert(formatAlert);
             return;
         }
 
@@ -218,8 +293,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('remove-file-btn').disabled = false;
         }
         checkFormValidity();
+        const submitText = translations['submit_btn_text'] || '開始智慧分析';
         submitBtn.innerHTML = `
-            <span>開始智慧分析</span>
+            <span>${submitText}</span>
             <svg class="arrow-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -237,11 +313,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.getElementById('remove-file-btn')) {
             document.getElementById('remove-file-btn').disabled = true;
         }
+        
+        const loadingTaskText = currentLang === 'en' ? 'Creating analysis task...' : '建立分析任務...';
         submitBtn.innerHTML = `
-            <span>建立分析任務...</span>
+            <span>${loadingTaskText}</span>
         `;
         
-        statusBadge.textContent = '分析中...';
+        statusBadge.textContent = translations['status_badge_processing'] || '分析中...';
         statusBadge.className = 'status-badge analyzing';
         
         resultIdle.classList.add('hidden');
@@ -253,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('file', selectedFile);
         formData.append('question', questionInput.value.trim());
         formData.append('invite_code', inviteInput.value.trim());
+        formData.append('lang', currentLang);
 
         isProcessingAsync = false;
 
@@ -265,12 +344,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.detail || '分析失敗，請檢查後端連線。');
+                throw new Error(data.detail || 'NETWORK_ERROR');
             }
 
             // Render Quota Badge
             if (data.remaining_quota !== undefined) {
-                quotaBadge.textContent = `剩餘額度: ${data.remaining_quota} 次`;
+                const quotaCountEl = document.getElementById('quota-count');
+                if (quotaCountEl) {
+                    quotaCountEl.textContent = data.remaining_quota;
+                } else {
+                    quotaBadge.textContent = `剩餘額度: ${data.remaining_quota} 次`;
+                }
                 quotaBadge.style.display = 'inline-block';
             } else {
                 quotaBadge.style.display = 'none';
@@ -278,16 +362,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const taskId = data.task_id;
             if (!taskId) {
-                throw new Error('未取得 Task ID，無法追蹤分析狀態。');
+                throw new Error(currentLang === 'en' ? 'Failed to get Task ID. Cannot track status.' : '未取得 Task ID，無法追蹤分析狀態。');
             }
 
             if (!firebaseInitialized || !db) {
-                throw new Error('Firebase 尚未初始化完成，無法即時監聽分析狀態。請確認 GCP 存取權限。');
+                throw new Error(currentLang === 'en' ? 'Firebase not initialized yet. Please verify GCP access.' : 'Firebase 尚未初始化完成，無法即時監聽分析狀態。請確認 GCP 存取權限。');
             }
 
             isProcessingAsync = true;
             submitBtn.innerHTML = `
-                <span>AI 分析與檢索中...</span>
+                <span>${currentLang === 'en' ? 'AI Analysis & Retrieval...' : 'AI 分析與檢索中...'}</span>
             `;
 
             // Subscribe to task updates in Firestore
@@ -296,14 +380,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const taskData = doc.data();
 
                 if (taskData.status === 'processing') {
-                    statusBadge.textContent = '分析與檢索中...';
+                    statusBadge.textContent = translations['status_badge_processing'] || '分析與檢索中...';
                     statusBadge.className = 'status-badge analyzing';
                 } else if (taskData.status === 'success') {
                     unsubscribe(); // Stop listening
                     isProcessingAsync = false;
 
                     // Success UI
-                    statusBadge.textContent = '分析完成';
+                    statusBadge.textContent = translations['status_badge_success'] || '分析完成';
                     statusBadge.className = 'status-badge success';
                     resultLoading.classList.add('hidden');
                     resultSuccess.classList.remove('hidden');
@@ -339,13 +423,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     isProcessingAsync = false;
 
                     // Error UI
-                    statusBadge.textContent = '發生錯誤';
+                    statusBadge.textContent = translations['status_badge_failed'] || '發生錯誤';
                     statusBadge.className = 'status-badge idle';
                     resultLoading.classList.add('hidden');
                     resultIdle.classList.remove('hidden');
                     quotaBadge.style.display = 'none';
                     
-                    alert(`錯誤：${taskData.error || '背景分析發生未知錯誤。'}`);
+                    const errMsg = translations[taskData.error] || taskData.error || translations['UNKNOWN_ERROR'] || '背景分析發生未知錯誤。';
+                    const errTitle = translations['error_title'] || '分析失敗';
+                    alert(`${errTitle}: ${errMsg}`);
                     restoreFormUI();
                 }
             }, (error) => {
@@ -353,24 +439,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 isProcessingAsync = false;
                 console.error("Firestore subscription error: ", error);
                 
-                statusBadge.textContent = '發生錯誤';
+                statusBadge.textContent = translations['status_badge_failed'] || '發生錯誤';
                 statusBadge.className = 'status-badge idle';
                 resultLoading.classList.add('hidden');
                 resultIdle.classList.remove('hidden');
-                alert(`即時訂閱錯誤：${error.message}`);
+                alert(`Subscription Error: ${error.message}`);
                 restoreFormUI();
             });
 
         } catch (error) {
             isProcessingAsync = false;
             // Error UI
-            statusBadge.textContent = '發生錯誤';
+            statusBadge.textContent = translations['status_badge_failed'] || '發生錯誤';
             statusBadge.className = 'status-badge idle';
             resultLoading.classList.add('hidden');
             resultIdle.classList.remove('hidden');
             quotaBadge.style.display = 'none';
             
-            alert(`錯誤：${error.message}`);
+            const errMsg = translations[error.message] || error.message || translations['UNKNOWN_ERROR'] || '發生錯誤。';
+            const errTitle = translations['error_title'] || '分析失敗';
+            alert(`${errTitle}: ${errMsg}`);
         } finally {
             if (!isProcessingAsync) {
                 restoreFormUI();
