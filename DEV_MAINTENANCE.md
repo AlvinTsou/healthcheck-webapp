@@ -130,7 +130,25 @@
   gcloud compute ssh hrv001 --zone=asia-east1-c --command="cd ~/healthcheck-webapp && docker-compose down && docker-compose up -d --build"
   ```
 
-#### 2. 在 VM 上進行運維
+#### 2. VM 專案原始碼同步與 Git 初始化
+為使 VM 能快速拉取 GitHub 的最新程式碼更新，VM 的 `~/healthcheck-webapp` 目錄已初始化為 Git 儲存庫並追蹤 `origin/main` 核心分支。
+當您在本機完成程式碼修改並推送至 GitHub 後，可直接透過本機執行以下指令，一鍵同步 VM 代碼並完成重新部署（此動作會自動保留 VM 本地未追蹤的敏感設定如 `.env`、`cloudflare.crt` / `.key`、`quota_store.json` 等）：
+
+```bash
+# 從本機一鍵完成：1. 連線 VM 2. 拉取最新代碼 3. 重建 Docker 容器並部署
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="cd ~/healthcheck-webapp && git fetch origin && git reset --hard origin/main && docker-compose down && docker-compose up -d --build"
+```
+
+*若有特殊需求需在 VM 上手動重設 Git 狀態，可登入 VM 後執行：*
+```bash
+cd ~/healthcheck-webapp
+git init
+git remote add origin https://github.com/AlvinTsou/healthcheck-webapp
+git fetch origin
+git reset --hard origin/main
+```
+
+#### 3. 在 VM 上進行運維
 登入 VM 後，在 `~/healthcheck-webapp` 目錄下可使用以下指令管理 Docker 容器服務：
 
 * **重啟 WebApp 與 Nginx 服務**：
@@ -247,3 +265,21 @@
    * 將解碼後的 JSON 金鑰動態寫入容器內的 `/tmp/gcp-key.json`。
    * 自動將系統 `GOOGLE_APPLICATION_CREDENTIALS` 環境變數指向該路徑，完成 Firebase 與 Vertex AI SDK 的無縫驗證。
 
+
+### L. 靜態資源快取更新與版本控制 (Cache Busting)
+
+由於本專案的前端使用 Cloudflare 作為 CDN 代理，且會快取 `app.js` 與 `style.css` 等靜態資源（Cache TTL 預設通常為 4 小時）。
+若您修改了前端代碼並重新部署，但生產環境（https://healthreportview.papagopro.com）仍顯示舊版樣式或舊版 JS 邏輯（例如中英翻譯失效或按鈕點擊無反應），請依循以下步驟處理：
+
+1. **更新 HTML 的快取版本號（推薦，立即可見）**：
+   編輯 `static/index.html`，在引入靜態資源的連結後方加上 `?v=版本號`（例如 `?v=1.1.0`）：
+   ```html
+   <link rel="stylesheet" href="style.css?v=1.1.0">
+   <script src="app.js?v=1.1.0"></script>
+   ```
+   *每次更新前端 JS 或 CSS 後，建議累加此版本號（例如 `?v=1.1.1`），即可強制瀏覽器與 Cloudflare 清除舊快取並載入最新檔案。*
+
+2. **手動清除 Cloudflare 快取（管理員控制台）**：
+   * 登入 **Cloudflare 控制台**。
+   * 點選您的網域，進入 **Caching** -> **Configuration** 頁面。
+   * 點選 **Purge Everything**（清除所有快取），或選擇 **Custom Purge** 並指定清除 `https://healthreportview.papagopro.com/app.js` 與 `https://healthreportview.papagopro.com/style.css`。
