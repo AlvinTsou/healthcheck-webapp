@@ -24,9 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const loadLanguage = async (lang) => {
         try {
-            let res = await fetch(`/lang/${lang}.json`);
+            const res = await fetch(`/lang/${lang}.json`);
             if (!res.ok) {
-                res = await fetch(`/static/lang/${lang}.json`);
+                throw new Error(`Language file not found: /lang/${lang}.json (HTTP ${res.status})`);
             }
             translations = await res.json();
             currentLang = lang;
@@ -131,32 +131,36 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentAnalysisText = '';
 
     // --- Action Bar Listeners ---
-    copyReportBtn.addEventListener('click', async () => {
-        if (!currentAnalysisText) return;
-        try {
-            await navigator.clipboard.writeText(currentAnalysisText);
-            const originalText = copyReportBtn.innerHTML;
-            const successText = translations['copied_success'] || '已複製！';
-            copyReportBtn.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="currentColor"/>
-                </svg>
-                <span>${successText}</span>
-            `;
-            copyReportBtn.classList.add('copied');
-            setTimeout(() => {
-                copyReportBtn.innerHTML = originalText;
-                copyReportBtn.classList.remove('copied');
-            }, 1500);
-        } catch (err) {
-            const failAlert = currentLang === 'en' ? 'Copy failed, please select and copy manually.' : '複製失敗，請手動選取複製。';
-            alert(failAlert);
-        }
-    });
+    if (copyReportBtn) {
+        copyReportBtn.addEventListener('click', async () => {
+            if (!currentAnalysisText) return;
+            try {
+                await navigator.clipboard.writeText(currentAnalysisText);
+                const originalText = copyReportBtn.innerHTML;
+                const successText = translations['copied_success'] || '已複製！';
+                copyReportBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="currentColor"/>
+                    </svg>
+                    <span>${successText}</span>
+                `;
+                copyReportBtn.classList.add('copied');
+                setTimeout(() => {
+                    copyReportBtn.innerHTML = originalText;
+                    copyReportBtn.classList.remove('copied');
+                }, 1500);
+            } catch (err) {
+                const failAlert = currentLang === 'en' ? 'Copy failed, please select and copy manually.' : '複製失敗，請手動選取複製。';
+                alert(failAlert);
+            }
+        });
+    }
 
-    printPdfBtn.addEventListener('click', () => {
-        window.print();
-    });
+    if (printPdfBtn) {
+        printPdfBtn.addEventListener('click', () => {
+            window.print();
+        });
+    }
 
     // --- Drag and Drop Listeners ---
     ['dragenter', 'dragover'].forEach(eventName => {
