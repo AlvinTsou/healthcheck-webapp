@@ -187,3 +187,91 @@
 2. 匯入大於 `50 MB` 的 PDF 檔案時，因為系統需要進行 OCR 與文本向量化，背景解析大約需要 **5 至 15 分鐘**。
 3. 當活動記錄的狀態由 `Importing` 轉變為 `Completed`，代表解析已完成。
 4. 新資料解析完成後會**立即自動套用**。FastAPI 後端與 VM 上的 Docker 服務**完全無須重啟**，下次提問時 AI 便會即時使用新版手冊進行接地分析。
+
+---
+
+## 第八步：遠端運維與日誌查詢指引 (Remote Maintenance & Log Querying Guide)
+
+當 WebApp 部署上線後，您可以直接透過本機電腦的終端機（需要已安裝並驗證 `gcloud`），或是登入 VM 進行運維與日誌查詢。
+
+> **查詢前請注意資料敏感度。**
+>
+> 依 `SECURITY.md` 的設計，`usage_log.jsonl` **不記錄**報告中的生理數值、診斷結果或身分證字號等 PII。實際寫入的欄位為 `timestamp`、`invite_code`、`file_name`、`file_size_bytes`、`status`（失敗時另有 `error`）。
+>
+> 但其中兩項仍然敏感：`invite_code` 是可用來存取本系統的憑證，`file_name` 為使用者上傳時的原始檔名，**可能包含姓名**（例如 `王小明_健檢報告.pdf`）。`.env` 則直接含全部邀請碼。將它們完整輸出到終端機，會在畫面分享、螢幕錄影、貼上支援訊息或終端機捲動緩衝區中造成二次外洩。
+>
+> **預設請使用下方的最小必要查詢**；完整輸出僅限於您確實需要、且處於無人旁觀的授權維運情境。
+
+### 1. 一鍵查詢（直接在本機電腦終端機執行）
+
+如果您不需要登入 VM，可以直接在本機執行以下指令遠端讀取狀態：
+
+* **查詢分析紀錄的筆數與最近幾筆概況（建議預設用法）**：
+  只取最新 5 筆並遮罩內容，僅保留時間與處理結果，避免輸出邀請碼與原始檔名：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="wc -l ~/healthcheck-webapp/usage_log.jsonl && tail -n 5 ~/healthcheck-webapp/usage_log.jsonl | python3 -c 'import sys,json; [print(json.loads(l).get(\"timestamp\"), json.loads(l).get(\"status\")) for l in sys.stdin]'"
+  ```
+
+* **查詢邀請碼累積使用次數（遮罩）**：
+  顯示各邀請碼已被使用的成功次數，代碼遮罩後才輸出：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/quota_store.json" \
+    | python3 -c "import sys,json; [print(k[:2]+'***'+k[-1], v) for k,v in json.load(sys.stdin).items()]"
+  ```
+
+* **查詢各邀請碼的配額上限（遮罩）**：
+  `.env` 中的格式為 `CODE:LIMIT,CODE:LIMIT`（未指定 `LIMIT` 時採用程式預設值）：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="grep '^INVITATION_CODES=' ~/healthcheck-webapp/.env" \
+    | cut -d= -f2- | tr ',' '\n' \
+    | awk -F: 'NF{printf "%s***%s  上限=%s\n", substr($1,1,2), substr($1,length($1)), ($2==""?"預設":$2)}'
+  ```
+  *需要檢視完整邀請碼時，請見 `DEV_MAINTENANCE.md` §1 方法二。請注意：由本機終端機 SSH 登入後，完整輸出仍會顯示在同一個本機終端機、並可能留在捲動緩衝區中，因此該步驟的重點是「確認畫面未被分享或錄製、用完清畫面」，而非避開本機紀錄。*
+
+* **查詢 Nginx 伺服器最新 100 筆存取日誌 (nginx logs)**：
+  用來確認流量是否正常進入、以及各路徑的回應狀態碼：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="docker-compose -f ~/healthcheck-webapp/docker-compose.yml logs --tail=100 nginx"
+  ```
+
+  > **關於來源 IP：** 本站流量經由 Cloudflare 代理，而 `nginx.conf` 目前未設定 `set_real_ip_from` / `real_ip_header CF-Connecting-IP`，因此 access log 中的來源位址是 **Cloudflare 邊緣節點的 IP，不是使用者的真實 IP**。此外邀請碼為多人共用，**無法**藉由日誌可靠識別「哪一位使用者」。若確實需要真實來源 IP，請至 Cloudflare 控制台查看，或另行於 `nginx.conf` 補上 real_ip 設定。
+
+* **查詢 FastAPI 後端最新 100 筆服務日誌 (web logs)**：
+  用來排查後端服務運行、API 呼叫或連線錯誤：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="docker-compose -f ~/healthcheck-webapp/docker-compose.yml logs --tail=100 web"
+  ```
+
+### 2. 登入 VM 後查詢與監控
+
+如果您需要更即時、連續地監控系統狀態，可以先 SSH 登入 VM 後進行操作：
+
+1. **SSH 登入 VM**：
+   ```bash
+   gcloud compute ssh hrv001 --zone=asia-east1-c
+   ```
+
+2. **切換至專案目錄**：
+   ```bash
+   cd ~/healthcheck-webapp
+   ```
+
+3. **常用監控與運維指令**：
+   * **即時監控 Nginx 存取紀錄**（當有新連線時會即時捲動更新）：
+     ```bash
+     docker-compose logs -f nginx
+     ```
+   * **即時監控 FastAPI 後端日誌**（方便排查 API 處理狀態）：
+     ```bash
+     docker-compose logs -f web
+     ```
+   * **查看分析紀錄的最新幾筆（遮罩，建議預設用法）**：
+     ```bash
+     tail -n 20 usage_log.jsonl | python3 -c "import sys,json; [print(json.loads(l).get('timestamp'), json.loads(l).get('status')) for l in sys.stdin]"
+     ```
+   * **即時監控分析日誌更新（遮罩）**：
+     ```bash
+     tail -f usage_log.jsonl | python3 -u -c "import sys,json; [print(json.loads(l).get('timestamp'), json.loads(l).get('status')) for l in sys.stdin]"
+     ```
+
+   > **未遮罩的輸出**（`cat usage_log.jsonl`、`tail usage_log.jsonl`、`tail -f usage_log.jsonl`）會顯示 `invite_code` 與使用者上傳的原始 `file_name`。請僅在確有必要時使用，避免在共享畫面或錄影的情況下執行，並於查詢後以 `clear` 清除畫面。

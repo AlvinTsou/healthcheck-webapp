@@ -180,7 +180,46 @@ git reset --hard origin/main
 
 本專案在 MVP 階段採用輕量級的邀請碼共用配額防刷機制。配額已用次數記錄在 VM 專案目錄下的 `quota_store.json` 檔案中，並已掛載為 Docker Volume。
 
-#### 1. 重置邀請碼配額 (Reset Quotas)
+#### 1. 查詢邀請碼使用狀況與配額上限 (Query Invitation Quota Status)
+
+您可以透過以下兩種方式查詢目前各邀請碼的配額上限以及實際已用次數。
+
+> **邀請碼是存取本系統的憑證。** 完整列出邀請碼會留在終端機捲動紀錄、螢幕錄影與指令歷史中，因此**預設請使用下方的遮罩查詢**；需要看到完整邀請碼時（例如要提供給新使用者），請登入 VM 後查詢，並確認畫面未被分享或錄製。
+
+* **方法一：直接在本機終端機（Terminal）執行單行指令（免手動登入）**：
+  * **查看各邀請碼的上限（遮罩，建議預設用法）**：
+    `.env` 中的格式為 `CODE:LIMIT,CODE:LIMIT`（未指定 `LIMIT` 時採用程式預設值）。遠端只負責取值，遮罩在本機完成，終端機上不會出現完整邀請碼：
+    ```bash
+    gcloud compute ssh hrv001 --zone=asia-east1-c --command="grep '^INVITATION_CODES=' ~/healthcheck-webapp/.env" \
+      | cut -d= -f2- | tr ',' '\n' \
+      | awk -F: 'NF{printf "%s***%s  上限=%s\n", substr($1,1,2), substr($1,length($1)), ($2==""?"預設":$2)}'
+    ```
+  * **查看各邀請碼已用次數（遮罩）**：
+    ```bash
+    gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/quota_store.json" \
+      | python3 -c "import sys,json; [print(k[:2]+'***'+k[-1], v) for k,v in json.load(sys.stdin).items()]"
+    ```
+
+* **方法二：登入 VM 後查詢（需要看到完整邀請碼時使用）**：
+  1. SSH 登入遠端 VM：
+     ```bash
+     gcloud compute ssh hrv001 --zone=asia-east1-c
+     ```
+  2. 切換至專案目錄：
+     ```bash
+     cd ~/healthcheck-webapp
+     ```
+  3. 查看已使用次數與配額上限（**此步驟會顯示完整邀請碼**）：
+     ```bash
+     cat quota_store.json
+     grep '^INVITATION_CODES=' .env
+     ```
+  4. 查詢結束後，建議清除終端機畫面以免殘留：
+     ```bash
+     clear
+     ```
+
+#### 2. 重置邀請碼配額 (Reset Quotas)
 您可以透過以下三種方式之一重置所有邀請碼的配額：
 * **方法一：手動刪除（推薦，最方便）**：
   直接在 VM 專案目錄下刪除 `quota_store.json`。後端檢測到檔案不存在時會自動重新初始化為空狀態，因此**免重啟服務，立即生效**：
@@ -200,7 +239,7 @@ git reset --hard origin/main
     https://healthreportview.papagopro.com/api/reset
   ```
 
-#### 2. 新增、變更邀請碼或最高配額
+#### 3. 新增、變更邀請碼或最高配額
 1. 登入 VM 並編輯 `.env` 檔案：
    ```bash
    nano ~/healthcheck-webapp/.env
@@ -283,3 +322,153 @@ git reset --hard origin/main
    * 登入 **Cloudflare 控制台**。
    * 點選您的網域，進入 **Caching** -> **Configuration** 頁面。
    * 點選 **Purge Everything**（清除所有快取），或選擇 **Custom Purge** 並指定清除 `https://healthreportview.papagopro.com/app.js` 與 `https://healthreportview.papagopro.com/style.css`。
+
+---
+
+### M. 跨雲端伺服器遷移指引 (Cross-Cloud Migration Guide)
+
+當您需要將本 WebApp 從 GCP Compute Engine 遷移至其他雲端服務提供商（例如 AWS, Azure, DigitalOcean 或 Linode 等）時，請依循以下步驟進行應用程式與數據層級的遷移。
+
+> **重要：本流程產生的備份檔是完整的機密包，請先讀完本段再開始。**
+>
+> `docker-compose.yml` 將下列檔案由專案根目錄掛載進容器，因此打包整個專案目錄時**一定會包含**它們：
+>
+> | 檔案 | 內容 |
+> | --- | --- |
+> | `.env` | 邀請碼、後端環境設定 |
+> | `gcp-key.json` | GCP service account 金鑰 |
+> | `cloudflare.key` / `cloudflare.crt` | Cloudflare Origin Certificate 私鑰與憑證 |
+> | `usage_log.jsonl` | 每次上傳的使用紀錄：時間、`invite_code`、`file_name`、檔案大小、處理結果 |
+> | `quota_store.json` | 邀請碼使用次數 |
+>
+> `.gitignore` 只影響 Git，**對 `tar` 完全無效**。`gzip` 是壓縮，**不是加密**。流程結束後您會在舊 VM、本機電腦、新伺服器**三個位置**各留下一份含 GCP service account 金鑰、TLS 私鑰與全部邀請碼的明文壓縮檔，必須依 §M.6 清理。
+
+#### 0. 遷移前準備（先做完，再停機）
+
+1. 確認本機已安裝並驗證 `gcloud`，且對來源 VM 具備 SSH 權限。
+2. 確認新伺服器的磁碟空間足以容納解壓後的專案（含 `usage_log.jsonl` 的成長量）。
+3. 先完成 §M.2 的新伺服器建立與 Docker 安裝，**再**進入下一步停止寫入。目標環境沒備妥就先停機，只會拉長停機時間。
+4. 確認您在 Cloudflare 的存取權限，屆時需修改 DNS A 記錄。
+   *註：本站的 A 記錄經 Cloudflare 代理（橘色雲朵），其 TTL 固定為 **Auto**、無法自行調低；代理記錄的來源 IP 變更由 Cloudflare 邊緣端生效，通常數秒內完成，因此不需要（也無法）預先調整 TTL。*
+
+**本指引的涵蓋範圍**：僅涵蓋 `~/healthcheck-webapp` 專案目錄。專案目錄以外的系統設定、crontab、Docker named volumes、以及 GCP 上的外部服務（Vertex AI Search Data Store、Cloud Storage 儲存桶等）**不在**此備份範圍內；那些資源仍留在原本的 GCP 專案，遷移後需確認新伺服器的 service account 仍可存取。
+
+#### 1. 進入維護狀態並製作最終備份
+
+直接打包執行中的服務，無法保證 `quota_store.json` 與 `usage_log.jsonl` 是同一時間點的一致狀態，備份之後舊站新增的紀錄也不會自動出現在新站。因此請先停止寫入：
+
+```bash
+# 1. 停止舊 VM 上的服務，確保沒有新的寫入
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="cd ~/healthcheck-webapp && docker-compose down"
+
+# 2. 服務停止後再打包。先設 umask 077，讓備份檔「一產生就是 600」，避免事後補 chmod 的暴露空窗
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="umask 077 && tar --exclude='healthcheck-webapp/.venv' --exclude='healthcheck-webapp/__pycache__' --exclude='healthcheck-webapp/.git' -czf ~/healthcheck-webapp-backup.tar.gz -C ~/ healthcheck-webapp"
+
+# 3. 下載至本地電腦（同樣先收緊 umask，再確認權限）
+umask 077
+gcloud compute scp hrv001:~/healthcheck-webapp-backup.tar.gz ./healthcheck-webapp-backup.tar.gz --zone=asia-east1-c
+ls -l ./healthcheck-webapp-backup.tar.gz   # 應為 -rw-------
+```
+
+*注意：若專案目錄內另有其他備份壓縮檔，也會一併被收錄，打包前請先確認。*
+
+**若需長期保存這份備份**，請加密後再存放，切勿直接放進雲端硬碟或 Git：
+
+```bash
+# 先安裝 age（macOS: brew install age／Debian: sudo apt-get install -y age）
+# 將收件者公鑰放進變數並加引號，避免 shell 把角括號當成重新導向
+AGE_RECIPIENT="age1..."    # 換成您自己的 age 公鑰
+age -r "$AGE_RECIPIENT" -o healthcheck-webapp-backup.tar.gz.age ./healthcheck-webapp-backup.tar.gz
+```
+
+#### 2. 在目標雲端建立並設定新伺服器
+
+1. 在目標雲端平台建立一台新的虛擬主機（建議 Debian 12 或 Ubuntu 22.04 以上）。
+2. 設定新主機的防火牆規則（Firewall / Security Group），開通對外連接埠：
+   * **TCP 80** (HTTP)
+   * **TCP 443** (HTTPS)
+3. 安裝 Docker Engine 與 Compose：
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y ca-certificates curl
+   # 官方安裝腳本（Debian/Ubuntu 皆適用，包含 Compose v2 外掛）
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo systemctl enable --now docker
+   sudo usermod -aG docker $USER
+   ```
+
+   *注意一：執行完 `usermod` 後，請 `exit` 登出並重新連線 SSH，群組設定才會生效。*
+   *注意二：較新的發行版套件庫已無 `docker-compose`（v1）。上述腳本安裝的是 Compose v2，指令為 `docker compose`（無連字號）。若您的環境仍是 v1，以下指令請改用 `docker-compose`。*
+
+#### 3. 在新伺服器上還原專案
+
+```bash
+# 由本地電腦上傳（將 IP 放進變數並加引號，避免 shell 把角括號當成重新導向）
+NEW_HOST="user@203.0.113.10"     # 換成您的新伺服器帳號與 IP
+scp ./healthcheck-webapp-backup.tar.gz "$NEW_HOST":~/
+
+# SSH 登入新伺服器後解壓縮並限制權限
+chmod 600 ~/healthcheck-webapp-backup.tar.gz
+tar -xzf ~/healthcheck-webapp-backup.tar.gz -C ~/
+cd ~/healthcheck-webapp
+chmod 600 .env gcp-key.json cloudflare.key
+docker compose up -d --build
+```
+
+#### 4. 切換 DNS 前的驗證（不可略過）
+
+`docker compose up` 成功**不代表服務可用**。請在切換流量前，於新伺服器上逐項確認：
+
+1. **容器狀態**：`docker compose ps` 顯示 `web` 與 `nginx` 皆為 running，且 `docker compose logs --tail=50 web` 無啟動錯誤。
+2. **TLS 憑證存在**：確認 `cloudflare.crt` 與 `cloudflare.key` 已隨備份還原至專案根目錄，且 `nginx` 容器啟動時沒有憑證讀取錯誤。
+
+   > **請勿以新伺服器 IP 直接開瀏覽器測試 HTTPS。** `nginx.conf` 的 `server_name` 綁定 `healthreportview.papagopro.com`，且憑證是 **Cloudflare Origin Certificate**——它只被 Cloudflare 信任，不是公開 CA 簽發，直連 IP 或將 DNS 設為 DNS-only 都會出現憑證錯誤，這是預期行為，不代表設定失敗。
+
+3. **繞過 DNS 做端對端測試（測的是應用路徑，不是公開 TLS 路徑）**：
+
+   ```bash
+   NEW_IP="203.0.113.10"    # 換成新伺服器 IP
+   # 取得 Cloudflare Origin CA 根憑證，用它驗證 origin 憑證（不要用 -k 跳過驗證）
+   curl -fsSL https://developers.cloudflare.com/ssl/static/origin_ca_ecc_root.pem -o /tmp/cf_origin_root.pem
+   curl --cacert /tmp/cf_origin_root.pem \
+        --resolve "healthreportview.papagopro.com:443:$NEW_IP" \
+        -I https://healthreportview.papagopro.com/
+   ```
+
+   > **這一步驗證的是什麼、不是什麼：** 它確認新 origin 的 Nginx、憑證鏈與應用程式可正常回應，但它**繞過了 Cloudflare**，因此**不能**證明使用者實際走的完整 TLS 路徑正常。真正的公開路徑必須在 §M.5 切換 DNS 之後、以正常瀏覽器連線再驗證一次。
+   >
+   > 若改用修改本機 `hosts` 檔的方式測試，請注意 Origin Certificate **不會**因此變成瀏覽器信任的憑證，瀏覽器仍會顯示憑證警告，這是預期行為；且**測試完務必移除 `hosts` 覆寫**，否則之後會一直連到舊的測試目標。
+
+4. **資料完整性**：確認 `quota_store.json` 與 `usage_log.jsonl` 的內容與行數和舊站一致。
+5. **功能驗證**：以一組邀請碼實際完成一次報告上傳與分析，確認 RAG 分析可正常存取 Vertex AI Search。
+
+#### 5. 切換流量
+
+1. 確認 Cloudflare 的 **SSL/TLS 加密模式**維持在 **Full (Strict)**，且該網域的 proxy（橘色雲朵）保持**開啟**。Origin Certificate 只在 Cloudflare 代理流量時有效，若關閉 proxy，使用者會直接看到憑證錯誤。
+2. 於 Cloudflare DNS 將 A 記錄指向新伺服器的外部 IP。
+3. 觀察新伺服器日誌確認流量進入：`docker compose logs -f nginx`。
+
+**回復步驟**：若切換後發現異常，請依下列順序回復，**不要只改 DNS 就了事**——新站在 §M.4 的功能驗證與切換後的任何流量，都已經寫入新站的 `quota_store.json` 與 `usage_log.jsonl`，直接切回舊站會遺失這些紀錄，若兩站同時可寫更會造成資料分歧：
+
+1. **先停止新站寫入**：在新伺服器執行 `cd ~/healthcheck-webapp && docker compose down`。
+2. **核對並回補資料**：比對新舊兩站的 `quota_store.json` 與 `usage_log.jsonl`。回補範圍是**自 §M.1 最終備份之後、新站產生的全部紀錄**——這包含 §M.4 功能驗證時的測試上傳，不只是切換 DNS 之後的流量。將這些 `usage_log.jsonl` 行附加回舊站，並依此更新舊站 `quota_store.json` 的計數，避免配額被重複使用。
+3. **啟動舊站**：在舊 VM 執行 `cd ~/healthcheck-webapp && docker-compose up -d`。
+4. **切回 DNS**：將 A 記錄改回舊 VM 的 IP，並確認流量進入舊站。
+
+**在確認新站穩定運行、且已完成上述資料核對之前，請勿刪除舊 VM 或其備份。**
+
+#### 6. 清理備份副本（遷移確認完成後務必執行）
+
+驗證新站穩定後，刪除三處的明文備份，只保留加密版本（若有）：
+
+```bash
+# 舊 VM
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="rm -f ~/healthcheck-webapp-backup.tar.gz"
+
+# 本地電腦
+rm -f ./healthcheck-webapp-backup.tar.gz
+
+# 新伺服器（SSH 登入後）
+rm -f ~/healthcheck-webapp-backup.tar.gz
+```
