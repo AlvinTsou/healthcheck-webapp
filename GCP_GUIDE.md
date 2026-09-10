@@ -207,22 +207,26 @@
 如果您不需要登入 VM，可以直接在本機執行以下指令遠端讀取狀態：
 
 * **查詢分析紀錄的筆數與最近幾筆概況（建議預設用法）**：
-  只取最新 5 筆並遮罩內容，僅保留時間與處理結果，避免輸出報告內文：
+  只取最新 5 筆並遮罩內容，僅保留時間與處理結果，避免輸出邀請碼與原始檔名：
   ```bash
   gcloud compute ssh hrv001 --zone=asia-east1-c --command="wc -l ~/healthcheck-webapp/usage_log.jsonl && tail -n 5 ~/healthcheck-webapp/usage_log.jsonl | python3 -c 'import sys,json; [print(json.loads(l).get(\"timestamp\"), json.loads(l).get(\"status\")) for l in sys.stdin]'"
   ```
 
-* **查詢邀請碼累積使用次數 (quota_store.json)**：
-  顯示目前各邀請碼已被使用的成功次數：
+* **查詢邀請碼累積使用次數（遮罩）**：
+  顯示各邀請碼已被使用的成功次數，代碼遮罩後才輸出：
   ```bash
-  gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/quota_store.json"
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/quota_store.json" \
+    | python3 -c "import sys,json; [print(k[:2]+'***'+k[-1], v) for k,v in json.load(sys.stdin).items()]"
   ```
 
-* **查詢各邀請碼的上限設定（僅顯示碼數，不顯示碼本身）**：
+* **查詢各邀請碼的配額上限（遮罩）**：
+  `.env` 中的格式為 `CODE:LIMIT,CODE:LIMIT`（未指定 `LIMIT` 時採用程式預設值）：
   ```bash
-  gcloud compute ssh hrv001 --zone=asia-east1-c --command="grep INVITATION_CODES ~/healthcheck-webapp/.env | tr ',' '\n' | wc -l"
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="grep '^INVITATION_CODES=' ~/healthcheck-webapp/.env" \
+    | cut -d= -f2- | tr ',' '\n' \
+    | awk -F: 'NF{printf "%s***%s  上限=%s\n", substr($1,1,2), substr($1,length($1)), ($2==""?"預設":$2)}'
   ```
-  *需要檢視實際邀請碼時，請登入 VM 後查詢，避免留在本機終端機紀錄中。*
+  *需要檢視完整邀請碼時，請登入 VM 後查詢（見 `DEV_MAINTENANCE.md` §1 方法二），避免留在本機終端機紀錄中。*
 
 * **查詢 Nginx 伺服器最新 100 筆存取日誌 (nginx logs)**：
   用來確認流量是否正常進入、以及各路徑的回應狀態碼：
