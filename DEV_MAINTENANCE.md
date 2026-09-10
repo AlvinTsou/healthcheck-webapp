@@ -452,7 +452,7 @@ docker compose up -d --build
 **回復步驟**：若切換後發現異常，請依下列順序回復，**不要只改 DNS 就了事**——新站在 §M.4 的功能驗證與切換後的任何流量，都已經寫入新站的 `quota_store.json` 與 `usage_log.jsonl`，直接切回舊站會遺失這些紀錄，若兩站同時可寫更會造成資料分歧：
 
 1. **先停止新站寫入**：在新伺服器執行 `cd ~/healthcheck-webapp && docker compose down`。
-2. **核對並回補資料**：比對新舊兩站的 `quota_store.json` 與 `usage_log.jsonl`。將新站在切換後產生的 `usage_log.jsonl` 行附加回舊站，並依此更新舊站 `quota_store.json` 的計數，避免配額被重複使用。
+2. **核對並回補資料**：比對新舊兩站的 `quota_store.json` 與 `usage_log.jsonl`。回補範圍是**自 §M.1 最終備份之後、新站產生的全部紀錄**——這包含 §M.4 功能驗證時的測試上傳，不只是切換 DNS 之後的流量。將這些 `usage_log.jsonl` 行附加回舊站，並依此更新舊站 `quota_store.json` 的計數，避免配額被重複使用。
 3. **啟動舊站**：在舊 VM 執行 `cd ~/healthcheck-webapp && docker-compose up -d`。
 4. **切回 DNS**：將 A 記錄改回舊 VM 的 IP，並確認流量進入舊站。
 

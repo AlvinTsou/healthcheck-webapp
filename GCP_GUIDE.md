@@ -226,7 +226,7 @@
     | cut -d= -f2- | tr ',' '\n' \
     | awk -F: 'NF{printf "%s***%s  上限=%s\n", substr($1,1,2), substr($1,length($1)), ($2==""?"預設":$2)}'
   ```
-  *需要檢視完整邀請碼時，請登入 VM 後查詢（見 `DEV_MAINTENANCE.md` §1 方法二），避免留在本機終端機紀錄中。*
+  *需要檢視完整邀請碼時，請見 `DEV_MAINTENANCE.md` §1 方法二。請注意：由本機終端機 SSH 登入後，完整輸出仍會顯示在同一個本機終端機、並可能留在捲動緩衝區中，因此該步驟的重點是「確認畫面未被分享或錄製、用完清畫面」，而非避開本機紀錄。*
 
 * **查詢 Nginx 伺服器最新 100 筆存取日誌 (nginx logs)**：
   用來確認流量是否正常進入、以及各路徑的回應狀態碼：
@@ -265,13 +265,13 @@
      ```bash
      docker-compose logs -f web
      ```
-   * **查看分析紀錄的最新幾筆**：
+   * **查看分析紀錄的最新幾筆（遮罩，建議預設用法）**：
      ```bash
-     tail -n 20 usage_log.jsonl
+     tail -n 20 usage_log.jsonl | python3 -c "import sys,json; [print(json.loads(l).get('timestamp'), json.loads(l).get('status')) for l in sys.stdin]"
      ```
-   * **即時監控分析日誌更新**：
+   * **即時監控分析日誌更新（遮罩）**：
      ```bash
-     tail -f usage_log.jsonl
+     tail -f usage_log.jsonl | python3 -u -c "import sys,json; [print(json.loads(l).get('timestamp'), json.loads(l).get('status')) for l in sys.stdin]"
      ```
 
-   > `usage_log.jsonl` 的完整輸出（`cat usage_log.jsonl`）會顯示全部邀請碼與上傳檔名，請僅在確有必要時使用，並避免在共享畫面的情況下執行。
+   > **未遮罩的輸出**（`cat usage_log.jsonl`、`tail usage_log.jsonl`、`tail -f usage_log.jsonl`）會顯示 `invite_code` 與使用者上傳的原始 `file_name`。請僅在確有必要時使用，避免在共享畫面或錄影的情況下執行，並於查詢後以 `clear` 清除畫面。
