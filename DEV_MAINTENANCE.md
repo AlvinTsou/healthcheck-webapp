@@ -180,7 +180,36 @@ git reset --hard origin/main
 
 本專案在 MVP 階段採用輕量級的邀請碼共用配額防刷機制。配額已用次數記錄在 VM 專案目錄下的 `quota_store.json` 檔案中，並已掛載為 Docker Volume。
 
-#### 1. 重置邀請碼配額 (Reset Quotas)
+#### 1. 查詢邀請碼使用狀況與配額上限 (Query Invitation Quota Status)
+
+您可以透過以下兩種方式查詢目前各邀請碼的配額上限以及實際已用次數：
+
+* **方法一：直接在本機終端機（Terminal）執行單行指令（免手動登入）**：
+  * **查看各邀請碼目前已用次數**：
+    ```bash
+    gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/quota_store.json"
+    ```
+  * **查看各邀請碼的上限設定**：
+    ```bash
+    gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/.env | grep INVITATION_CODES"
+    ```
+
+* **方法二：登入 VM 後查詢**：
+  1. SSH 登入遠端 VM：
+     ```bash
+     gcloud compute ssh hrv001 --zone=asia-east1-c
+     ```
+  2. 切換至專案目錄：
+     ```bash
+     cd ~/healthcheck-webapp
+     ```
+  3. 查看已使用次數與配額上限：
+     ```bash
+     cat quota_store.json
+     cat .env | grep INVITATION_CODES
+     ```
+
+#### 2. 重置邀請碼配額 (Reset Quotas)
 您可以透過以下三種方式之一重置所有邀請碼的配額：
 * **方法一：手動刪除（推薦，最方便）**：
   直接在 VM 專案目錄下刪除 `quota_store.json`。後端檢測到檔案不存在時會自動重新初始化為空狀態，因此**免重啟服務，立即生效**：
@@ -200,7 +229,7 @@ git reset --hard origin/main
     https://healthreportview.papagopro.com/api/reset
   ```
 
-#### 2. 新增、變更邀請碼或最高配額
+#### 3. 新增、變更邀請碼或最高配額
 1. 登入 VM 並編輯 `.env` 檔案：
    ```bash
    nano ~/healthcheck-webapp/.env
@@ -283,3 +312,50 @@ git reset --hard origin/main
    * 登入 **Cloudflare 控制台**。
    * 點選您的網域，進入 **Caching** -> **Configuration** 頁面。
    * 點選 **Purge Everything**（清除所有快取），或選擇 **Custom Purge** 並指定清除 `https://healthreportview.papagopro.com/app.js` 與 `https://healthreportview.papagopro.com/style.css`。
+
+---
+
+### M. 跨雲端伺服器遷移指引 (Cross-Cloud Migration Guide)
+
+當您需要將本 WebApp 從 GCP Compute Engine 遷移至其他雲端服務提供商（例如 AWS, Azure, DigitalOcean 或 Linode 等）時，請依循以下步驟進行應用程式與數據層級的遷移：
+
+#### 1. 備份現有 GCP 伺服器上的數據與專案檔案
+在您的**本地電腦**終端機執行以下指令，將遠端 VM 的整個專案資料夾打包壓縮，並下載至本地：
+```bash
+# 1. 遠端連線 VM 並打包專案（排除虛擬環境、Git 歷史紀錄與暫存檔）
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="tar --exclude='healthcheck-webapp/.venv' --exclude='healthcheck-webapp/__pycache__' --exclude='healthcheck-webapp/.git' --exclude='healthcheck-webapp/healthcheck-webapp.tar.gz' -czf ~/healthcheck-webapp-backup.tar.gz -C ~/ healthcheck-webapp"
+
+# 2. 將備份壓縮檔下載至本地電腦
+gcloud compute scp hrv001:~/healthcheck-webapp-backup.tar.gz ./healthcheck-webapp-backup.tar.gz --zone=asia-east1-c
+```
+
+#### 2. 在目標雲端建立並設定新伺服器
+1. 在目標雲端平台建立一台新的虛擬主機（建議選用 Debian/Ubuntu 系統）。
+2. 設定新主機的防火牆規則（Firewall / Security Group），開通對外連接埠：
+   * **TCP 80** (HTTP)
+   * **TCP 443** (HTTPS)
+
+#### 3. 在新伺服器上還原專案與啟動服務
+1. 將下載好的備份檔案上傳至新伺服器：
+   ```bash
+   scp ./healthcheck-webapp-backup.tar.gz user@<新伺服器_IP>:~/
+   ```
+2. 透過 SSH 登入新伺服器並解壓縮：
+   ```bash
+   tar -xzf ~/healthcheck-webapp-backup.tar.gz -C ~/
+   cd ~/healthcheck-webapp
+   ```
+3. 在新伺服器上安裝 Docker 與 Docker Compose 引擎：
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y docker.io docker-compose
+   sudo systemctl start docker
+   sudo systemctl enable docker
+   sudo usermod -aG docker $USER
+   ```
+   *注意：執行完 `usermod` 後，請輸入 `exit` 登出並重新連線 SSH，該群組設定才會生效。*
+4. 啟動 WebApp 與 Nginx 服務：
+   ```bash
+   docker-compose up -d --build
+   ```
+5. 將您網域（如 `healthreportview.papagopro.com`）的 DNS 解析指向新伺服器的外部 IP，即可完成遷移。

@@ -187,3 +187,69 @@
 2. 匯入大於 `50 MB` 的 PDF 檔案時，因為系統需要進行 OCR 與文本向量化，背景解析大約需要 **5 至 15 分鐘**。
 3. 當活動記錄的狀態由 `Importing` 轉變為 `Completed`，代表解析已完成。
 4. 新資料解析完成後會**立即自動套用**。FastAPI 後端與 VM 上的 Docker 服務**完全無須重啟**，下次提問時 AI 便會即時使用新版手冊進行接地分析。
+
+---
+
+## 第八步：遠端運維與日誌查詢指引 (Remote Maintenance & Log Querying Guide)
+
+當 WebApp 部署上線後，您可以直接透過本機電腦的終端機（需要已安裝並驗證 `gcloud`），或是登入 VM 進行運維與日誌查詢。
+
+### 1. 一鍵查詢（直接在本機電腦終端機執行）
+
+如果您不需要登入 VM，可以直接在本機執行以下指令遠端讀取日誌或狀態：
+
+* **查詢健檢報告分析紀錄 (usage_log.jsonl)**：
+  這會顯示所有使用者上傳報告的分析歷史與結果（成功或失敗原因）：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/usage_log.jsonl"
+  ```
+
+* **查詢邀請碼累積使用次數 (quota_store.json)**：
+  這會顯示目前各邀請碼已被使用的成功次數：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/quota_store.json"
+  ```
+
+* **查詢 Nginx 伺服器最新 100 筆連線日誌 (nginx logs)**：
+  這可以用來追蹤使用者點擊邀請碼連結進入網頁的存取紀錄（如來源 IP、User-Agent 等）：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="docker-compose -f ~/healthcheck-webapp/docker-compose.yml logs --tail=100 nginx"
+  ```
+
+* **查詢 FastAPI 後端最新 100 筆服務日誌 (web logs)**：
+  這可以用來排查後端服務運行、API 呼叫或連線錯誤：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="docker-compose -f ~/healthcheck-webapp/docker-compose.yml logs --tail=100 web"
+  ```
+
+### 2. 登入 VM 後查詢與監控
+
+如果您需要更即時、連續地監控系統狀態，可以先 SSH 登入 VM 後進行操作：
+
+1. **SSH 登入 VM**：
+   ```bash
+   gcloud compute ssh hrv001 --zone=asia-east1-c
+   ```
+
+2. **切換至專案目錄**：
+   ```bash
+   cd ~/healthcheck-webapp
+   ```
+
+3. **常用監控與運維指令**：
+   * **即時監控 Nginx 連線紀錄**（當有新連線時會即時捲動更新）：
+     ```bash
+     docker-compose logs -f nginx
+     ```
+   * **即時監控 FastAPI 後端日誌**（方便排查 API 處理狀態）：
+     ```bash
+     docker-compose logs -f web
+     ```
+   * **查看完整分析日誌檔案**：
+     ```bash
+     cat usage_log.jsonl
+     ```
+   * **即時監控分析日誌更新**：
+     ```bash
+     tail -f usage_log.jsonl
+     ```
