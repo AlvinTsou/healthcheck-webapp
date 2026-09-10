@@ -194,30 +194,46 @@
 
 當 WebApp 部署上線後，您可以直接透過本機電腦的終端機（需要已安裝並驗證 `gcloud`），或是登入 VM 進行運維與日誌查詢。
 
+> **查詢前請注意資料敏感度。**
+>
+> 依 `SECURITY.md` 的設計，`usage_log.jsonl` **不記錄**報告中的生理數值、診斷結果或身分證字號等 PII。實際寫入的欄位為 `timestamp`、`invite_code`、`file_name`、`file_size_bytes`、`status`（失敗時另有 `error`）。
+>
+> 但其中兩項仍然敏感：`invite_code` 是可用來存取本系統的憑證，`file_name` 為使用者上傳時的原始檔名，**可能包含姓名**（例如 `王小明_健檢報告.pdf`）。`.env` 則直接含全部邀請碼。將它們完整輸出到終端機，會在畫面分享、螢幕錄影、貼上支援訊息或終端機捲動緩衝區中造成二次外洩。
+>
+> **預設請使用下方的最小必要查詢**；完整輸出僅限於您確實需要、且處於無人旁觀的授權維運情境。
+
 ### 1. 一鍵查詢（直接在本機電腦終端機執行）
 
-如果您不需要登入 VM，可以直接在本機執行以下指令遠端讀取日誌或狀態：
+如果您不需要登入 VM，可以直接在本機執行以下指令遠端讀取狀態：
 
-* **查詢健檢報告分析紀錄 (usage_log.jsonl)**：
-  這會顯示所有使用者上傳報告的分析歷史與結果（成功或失敗原因）：
+* **查詢分析紀錄的筆數與最近幾筆概況（建議預設用法）**：
+  只取最新 5 筆並遮罩內容，僅保留時間與處理結果，避免輸出報告內文：
   ```bash
-  gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/usage_log.jsonl"
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="wc -l ~/healthcheck-webapp/usage_log.jsonl && tail -n 5 ~/healthcheck-webapp/usage_log.jsonl | python3 -c 'import sys,json; [print(json.loads(l).get(\"timestamp\"), json.loads(l).get(\"status\")) for l in sys.stdin]'"
   ```
 
 * **查詢邀請碼累積使用次數 (quota_store.json)**：
-  這會顯示目前各邀請碼已被使用的成功次數：
+  顯示目前各邀請碼已被使用的成功次數：
   ```bash
   gcloud compute ssh hrv001 --zone=asia-east1-c --command="cat ~/healthcheck-webapp/quota_store.json"
   ```
 
-* **查詢 Nginx 伺服器最新 100 筆連線日誌 (nginx logs)**：
-  這可以用來追蹤使用者點擊邀請碼連結進入網頁的存取紀錄（如來源 IP、User-Agent 等）：
+* **查詢各邀請碼的上限設定（僅顯示碼數，不顯示碼本身）**：
+  ```bash
+  gcloud compute ssh hrv001 --zone=asia-east1-c --command="grep INVITATION_CODES ~/healthcheck-webapp/.env | tr ',' '\n' | wc -l"
+  ```
+  *需要檢視實際邀請碼時，請登入 VM 後查詢，避免留在本機終端機紀錄中。*
+
+* **查詢 Nginx 伺服器最新 100 筆存取日誌 (nginx logs)**：
+  用來確認流量是否正常進入、以及各路徑的回應狀態碼：
   ```bash
   gcloud compute ssh hrv001 --zone=asia-east1-c --command="docker-compose -f ~/healthcheck-webapp/docker-compose.yml logs --tail=100 nginx"
   ```
 
+  > **關於來源 IP：** 本站流量經由 Cloudflare 代理，而 `nginx.conf` 目前未設定 `set_real_ip_from` / `real_ip_header CF-Connecting-IP`，因此 access log 中的來源位址是 **Cloudflare 邊緣節點的 IP，不是使用者的真實 IP**。此外邀請碼為多人共用，**無法**藉由日誌可靠識別「哪一位使用者」。若確實需要真實來源 IP，請至 Cloudflare 控制台查看，或另行於 `nginx.conf` 補上 real_ip 設定。
+
 * **查詢 FastAPI 後端最新 100 筆服務日誌 (web logs)**：
-  這可以用來排查後端服務運行、API 呼叫或連線錯誤：
+  用來排查後端服務運行、API 呼叫或連線錯誤：
   ```bash
   gcloud compute ssh hrv001 --zone=asia-east1-c --command="docker-compose -f ~/healthcheck-webapp/docker-compose.yml logs --tail=100 web"
   ```
@@ -237,7 +253,7 @@
    ```
 
 3. **常用監控與運維指令**：
-   * **即時監控 Nginx 連線紀錄**（當有新連線時會即時捲動更新）：
+   * **即時監控 Nginx 存取紀錄**（當有新連線時會即時捲動更新）：
      ```bash
      docker-compose logs -f nginx
      ```
@@ -245,11 +261,13 @@
      ```bash
      docker-compose logs -f web
      ```
-   * **查看完整分析日誌檔案**：
+   * **查看分析紀錄的最新幾筆**：
      ```bash
-     cat usage_log.jsonl
+     tail -n 20 usage_log.jsonl
      ```
    * **即時監控分析日誌更新**：
      ```bash
      tail -f usage_log.jsonl
      ```
+
+   > `usage_log.jsonl` 的完整輸出（`cat usage_log.jsonl`）會顯示全部邀請碼與上傳檔名，請僅在確有必要時使用，並避免在共享畫面的情況下執行。

@@ -317,45 +317,130 @@ git reset --hard origin/main
 
 ### M. 跨雲端伺服器遷移指引 (Cross-Cloud Migration Guide)
 
-當您需要將本 WebApp 從 GCP Compute Engine 遷移至其他雲端服務提供商（例如 AWS, Azure, DigitalOcean 或 Linode 等）時，請依循以下步驟進行應用程式與數據層級的遷移：
+當您需要將本 WebApp 從 GCP Compute Engine 遷移至其他雲端服務提供商（例如 AWS, Azure, DigitalOcean 或 Linode 等）時，請依循以下步驟進行應用程式與數據層級的遷移。
 
-#### 1. 備份現有 GCP 伺服器上的數據與專案檔案
-在您的**本地電腦**終端機執行以下指令，將遠端 VM 的整個專案資料夾打包壓縮，並下載至本地：
+> **重要：本流程產生的備份檔是完整的機密包，請先讀完本段再開始。**
+>
+> `docker-compose.yml` 將下列檔案由專案根目錄掛載進容器，因此打包整個專案目錄時**一定會包含**它們：
+>
+> | 檔案 | 內容 |
+> | --- | --- |
+> | `.env` | 邀請碼、後端環境設定 |
+> | `gcp-key.json` | GCP service account 金鑰 |
+> | `cloudflare.key` / `cloudflare.crt` | Cloudflare Origin Certificate 私鑰與憑證 |
+> | `usage_log.jsonl` | 每次上傳的使用紀錄：時間、`invite_code`、`file_name`、檔案大小、處理結果 |
+> | `quota_store.json` | 邀請碼使用次數 |
+>
+> `.gitignore` 只影響 Git，**對 `tar` 完全無效**。`gzip` 是壓縮，**不是加密**。流程結束後您會在舊 VM、本機電腦、新伺服器**三個位置**各留下一份含 GCP service account 金鑰、TLS 私鑰與全部邀請碼的明文壓縮檔，必須依 §M.6 清理。
+
+#### 0. 遷移前準備（先做完，再停機）
+
+1. 確認本機已安裝並驗證 `gcloud`，且對來源 VM 具備 SSH 權限。
+2. 確認新伺服器的磁碟空間足以容納解壓後的專案（含 `usage_log.jsonl` 的成長量）。
+3. 先完成 §M.2 的新伺服器建立與 Docker 安裝，**再**進入下一步停止寫入。目標環境沒備妥就先停機，只會拉長停機時間。
+4. 預先將網域的 DNS TTL 調低（例如 60 秒），以縮短最後切換的生效時間。
+
+**本指引的涵蓋範圍**：僅涵蓋 `~/healthcheck-webapp` 專案目錄。專案目錄以外的系統設定、crontab、Docker named volumes、以及 GCP 上的外部服務（Vertex AI Search Data Store、Cloud Storage 儲存桶等）**不在**此備份範圍內；那些資源仍留在原本的 GCP 專案，遷移後需確認新伺服器的 service account 仍可存取。
+
+#### 1. 進入維護狀態並製作最終備份
+
+直接打包執行中的服務，無法保證 `quota_store.json` 與 `usage_log.jsonl` 是同一時間點的一致狀態，備份之後舊站新增的紀錄也不會自動出現在新站。因此請先停止寫入：
+
 ```bash
-# 1. 遠端連線 VM 並打包專案（排除虛擬環境、Git 歷史紀錄與暫存檔）
-gcloud compute ssh hrv001 --zone=asia-east1-c --command="tar --exclude='healthcheck-webapp/.venv' --exclude='healthcheck-webapp/__pycache__' --exclude='healthcheck-webapp/.git' --exclude='healthcheck-webapp/healthcheck-webapp.tar.gz' -czf ~/healthcheck-webapp-backup.tar.gz -C ~/ healthcheck-webapp"
+# 1. 停止舊 VM 上的服務，確保沒有新的寫入
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="cd ~/healthcheck-webapp && docker-compose down"
 
-# 2. 將備份壓縮檔下載至本地電腦
+# 2. 服務停止後再打包（排除虛擬環境、快取與 Git 歷史；備份檔輸出於專案目錄之外）
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="tar --exclude='healthcheck-webapp/.venv' --exclude='healthcheck-webapp/__pycache__' --exclude='healthcheck-webapp/.git' -czf ~/healthcheck-webapp-backup.tar.gz -C ~/ healthcheck-webapp"
+
+# 3. 立即限制備份檔權限
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="chmod 600 ~/healthcheck-webapp-backup.tar.gz"
+
+# 4. 下載至本地電腦並同樣限制權限
 gcloud compute scp hrv001:~/healthcheck-webapp-backup.tar.gz ./healthcheck-webapp-backup.tar.gz --zone=asia-east1-c
+chmod 600 ./healthcheck-webapp-backup.tar.gz
+```
+
+*注意：若專案目錄內另有其他備份壓縮檔，也會一併被收錄，打包前請先確認。*
+
+**若需長期保存這份備份**，請加密後再存放，切勿直接放進雲端硬碟或 Git：
+
+```bash
+# 以 age 公鑰加密（或改用 gpg -c）
+age -r <your-age-recipient> -o healthcheck-webapp-backup.tar.gz.age ./healthcheck-webapp-backup.tar.gz
 ```
 
 #### 2. 在目標雲端建立並設定新伺服器
-1. 在目標雲端平台建立一台新的虛擬主機（建議選用 Debian/Ubuntu 系統）。
+
+1. 在目標雲端平台建立一台新的虛擬主機（建議 Debian 12 或 Ubuntu 22.04 以上）。
 2. 設定新主機的防火牆規則（Firewall / Security Group），開通對外連接埠：
    * **TCP 80** (HTTP)
    * **TCP 443** (HTTPS)
+3. 安裝 Docker Engine 與 Compose：
 
-#### 3. 在新伺服器上還原專案與啟動服務
-1. 將下載好的備份檔案上傳至新伺服器：
-   ```bash
-   scp ./healthcheck-webapp-backup.tar.gz user@<新伺服器_IP>:~/
-   ```
-2. 透過 SSH 登入新伺服器並解壓縮：
-   ```bash
-   tar -xzf ~/healthcheck-webapp-backup.tar.gz -C ~/
-   cd ~/healthcheck-webapp
-   ```
-3. 在新伺服器上安裝 Docker 與 Docker Compose 引擎：
    ```bash
    sudo apt-get update
-   sudo apt-get install -y docker.io docker-compose
-   sudo systemctl start docker
-   sudo systemctl enable docker
+   sudo apt-get install -y ca-certificates curl
+   # 官方安裝腳本（Debian/Ubuntu 皆適用，包含 Compose v2 外掛）
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo systemctl enable --now docker
    sudo usermod -aG docker $USER
    ```
-   *注意：執行完 `usermod` 後，請輸入 `exit` 登出並重新連線 SSH，該群組設定才會生效。*
-4. 啟動 WebApp 與 Nginx 服務：
+
+   *注意一：執行完 `usermod` 後，請 `exit` 登出並重新連線 SSH，群組設定才會生效。*
+   *注意二：較新的發行版套件庫已無 `docker-compose`（v1）。上述腳本安裝的是 Compose v2，指令為 `docker compose`（無連字號）。若您的環境仍是 v1，以下指令請改用 `docker-compose`。*
+
+#### 3. 在新伺服器上還原專案
+
+```bash
+# 由本地電腦上傳
+scp ./healthcheck-webapp-backup.tar.gz user@<新伺服器_IP>:~/
+
+# SSH 登入新伺服器後解壓縮並限制權限
+chmod 600 ~/healthcheck-webapp-backup.tar.gz
+tar -xzf ~/healthcheck-webapp-backup.tar.gz -C ~/
+cd ~/healthcheck-webapp
+chmod 600 .env gcp-key.json cloudflare.key
+docker compose up -d --build
+```
+
+#### 4. 切換 DNS 前的驗證（不可略過）
+
+`docker compose up` 成功**不代表服務可用**。請在切換流量前，於新伺服器上逐項確認：
+
+1. **容器狀態**：`docker compose ps` 顯示 `web` 與 `nginx` 皆為 running，且 `docker compose logs --tail=50 web` 無啟動錯誤。
+2. **TLS 憑證存在**：確認 `cloudflare.crt` 與 `cloudflare.key` 已隨備份還原至專案根目錄，且 `nginx` 容器啟動時沒有憑證讀取錯誤。
+
+   > **請勿以新伺服器 IP 直接開瀏覽器測試 HTTPS。** `nginx.conf` 的 `server_name` 綁定 `healthreportview.papagopro.com`，且憑證是 **Cloudflare Origin Certificate**——它只被 Cloudflare 信任，不是公開 CA 簽發，直連 IP 或將 DNS 設為 DNS-only 都會出現憑證錯誤，這是預期行為，不代表設定失敗。
+
+3. **繞過 DNS 做端對端測試**：在本機 `hosts` 檔暫時將網域指向新伺服器 IP，或使用：
+
    ```bash
-   docker-compose up -d --build
+   curl -k --resolve healthreportview.papagopro.com:443:<新伺服器_IP> https://healthreportview.papagopro.com/ -I
    ```
-5. 將您網域（如 `healthreportview.papagopro.com`）的 DNS 解析指向新伺服器的外部 IP，即可完成遷移。
+
+4. **資料完整性**：確認 `quota_store.json` 與 `usage_log.jsonl` 的內容與行數和舊站一致。
+5. **功能驗證**：以一組邀請碼實際完成一次報告上傳與分析，確認 RAG 分析可正常存取 Vertex AI Search。
+
+#### 5. 切換流量
+
+1. 確認 Cloudflare 的 **SSL/TLS 加密模式**維持在 **Full (Strict)**，且該網域的 proxy（橘色雲朵）保持**開啟**。Origin Certificate 只在 Cloudflare 代理流量時有效，若關閉 proxy，使用者會直接看到憑證錯誤。
+2. 於 Cloudflare DNS 將 A 記錄指向新伺服器的外部 IP。
+3. 觀察新伺服器日誌確認流量進入：`docker compose logs -f nginx`。
+
+**回復步驟**：若切換後發現異常，將 DNS A 記錄改回舊 VM 的 IP，並在舊 VM 上執行 `cd ~/healthcheck-webapp && docker-compose up -d` 重新啟動服務。因為舊站在 §M.1 之後即停止寫入，資料不會分歧。**在確認新站穩定運行之前，請勿刪除舊 VM。**
+
+#### 6. 清理備份副本（遷移確認完成後務必執行）
+
+驗證新站穩定後，刪除三處的明文備份，只保留加密版本（若有）：
+
+```bash
+# 舊 VM
+gcloud compute ssh hrv001 --zone=asia-east1-c --command="rm -f ~/healthcheck-webapp-backup.tar.gz"
+
+# 本地電腦
+rm -f ./healthcheck-webapp-backup.tar.gz
+
+# 新伺服器（SSH 登入後）
+rm -f ~/healthcheck-webapp-backup.tar.gz
+```
